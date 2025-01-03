@@ -1,10 +1,10 @@
 let lastKey = null;
-let scrollDelta = 0;
+let fullScrollDelta = 0;
 
 chrome.runtime.onInstalled.addListener(() => {
     chrome.storage.local.set({
         lastKey: null,
-        scrollDelta: 0,
+        fullScrollDelta: 0,
         settings: {
             keys: {
                 metaKey: 'tabs',
@@ -17,6 +17,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('message', message);
    if (message.type === 'SCROLL') {
     handleTabSwitch({
         ...message,
@@ -26,30 +27,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-async function handleTabSwitch({ scrollUpdate, key, tabId }) {
+async function handleTabSwitch({ scrollDelta, key, tabId }) {
 
     if (key != lastKey) {
         lastKey = key;
     }
-
+    console.log('handleTabSwitch');
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (currentTab.id !== tabId) {
         return;
     }
   
     const scrollThreshold = 60;
-    if ((scrollDelta < 0 && scrollUpdate > 0) || (scrollDelta > 0 && scrollUpdate < 0)) {
-        scrollDelta = scrollUpdate;
+    if ((fullScrollDelta < 0 && scrollDelta > 0) || (fullScrollDelta > 0 && scrollDelta < 0)) {
+        fullScrollDelta = scrollDelta;
     } else {
-        scrollDelta += scrollUpdate;
+        fullScrollDelta += scrollDelta;
     }
-    if (Math.abs(scrollDelta) < scrollThreshold) {
+    if (Math.abs(fullScrollDelta) < scrollThreshold) {
         return;
     }
 
     const settings = await getSettings();
     const keyBinding = settings.keys[key];
-
+    console.log('keyBinding', keyBinding);
     let tabs = [];
     let windows = [];
     if (keyBinding == 'tabs') {
@@ -60,7 +61,7 @@ async function handleTabSwitch({ scrollUpdate, key, tabId }) {
     } else if (keyBinding == 'recent') {
         tabs = await chrome.tabs.query({ currentWindow: true });
         tabs.sort((a, b) => {
-            return a.lastAccessed - b.lastAccessed;
+            return b.lastAccessed - a.lastAccessed;
         });
     } else if (keyBinding == 'windows') {
         windows = await chrome.windows.getAll();
@@ -72,9 +73,9 @@ async function handleTabSwitch({ scrollUpdate, key, tabId }) {
     if (keyBinding == 'windows') {
         const currentIndex = windows.findIndex(window => window.id === currentTab.windowId);
         let newIndex = currentIndex;
-        if (scrollDelta <= scrollThreshold) {
+        if (fullScrollDelta <= scrollThreshold) {
             newIndex = currentIndex === windows.length - 1 ? 0 : currentIndex + 1;
-        } else if (scrollDelta >= -scrollThreshold) {
+        } else if (fullScrollDelta >= -scrollThreshold) {
             newIndex = currentIndex === 0 ? windows.length - 1 : currentIndex - 1;
         }
         await chrome.windows.update(windows[newIndex].id, { focused: true });
@@ -82,16 +83,17 @@ async function handleTabSwitch({ scrollUpdate, key, tabId }) {
 
         const currentIndex = tabs.findIndex(tab => tab.id === currentTab.id);
         let newIndex = currentIndex;
-        if (scrollDelta <= scrollThreshold) {
-            newIndex = currentIndex === tabs.length - 1 ? 0 : currentIndex + 1;
-        } else if (scrollDelta >= -scrollThreshold) {
-            newIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
+        console.log('currentIndex', currentIndex);
+        if (fullScrollDelta <= scrollThreshold) {
+            newIndex = (currentIndex === (tabs.length - 1)) ? 0 : currentIndex + 1;
+        } else if (fullScrollDelta >= -scrollThreshold) {
+            newIndex = (currentIndex === 0) ? tabs.length - 1 : currentIndex - 1;
         }
-
+        console.log('newIndex', newIndex);
         await chrome.tabs.update(tabs[newIndex].id, { active: true });
     }
 
-    scrollDelta = 0;
+    fullScrollDelta = 0;
 }
 
 async function getSettings()  {

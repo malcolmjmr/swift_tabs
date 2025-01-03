@@ -1,7 +1,7 @@
 // Listen for wheel event to detect scrolling
 document.addEventListener('wheel', (event) => {
     // Send tab switch message to background script
-    if (event.metaKey || event.shiftKey || event.ctrlKey) {  
+    if (event.metaKey || event.shiftKey || event.ctrlKey || event.altKey) {  
         chrome.runtime.sendMessage({ 
             type: 'SCROLL',
             scrollDelta: event.deltaY,
