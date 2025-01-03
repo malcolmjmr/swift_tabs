@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tab Scroll Switcher Settings</title>
+    <style>
+        body {
+            padding: 20px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: inline-block;
+            width: 100px;
+        }
+        select {
+            padding: 5px;
+            width: 150px;
+        }
+        button {
+            margin-top: 15px;
+            padding: 8px 15px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Key Bindings</h2>
+    <div class="form-group">
+        <label for="metaKey">Command/Meta:</label>
+        <select id="metaKey">
+            <option value="tabs">Switch Tabs</option>
+            <option value="recent">Recent Tabs</option>
+            <option value="windows">Switch Windows</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="shiftKey">Shift:</label>
+        <select id="shiftKey">
+            <option value="tabs">Switch Tabs</option>
+            <option value="recent">Recent Tabs</option>
+            <option value="windows">Switch Windows</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="ctrlKey">Control:</label>
+        <select id="ctrlKey">
+            <option value="tabs">Switch Tabs</option>
+            <option value="recent">Recent Tabs</option>
+            <option value="windows">Switch Windows</option>
+        </select>
+    </div>
+    <button id="save">Save Settings</button>
+
+    <script src="options.js"></script>
+</body>
+</html>

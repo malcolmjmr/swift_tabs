@@ -1,10 +1,15 @@
 {
     "manifest_version": 3,
-    "name": "Tab Scroll Switcher",
+    "name": "Swift Tabs",
     "version": "1.0",
-    "description": "Switch between tabs using Command + scroll",
+    "description": "Scroll through your tabs and windows",
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": true
+    },
     "permissions": [
-        "tabs"
+        "tabs",
+        "storage"
     ],
     "background": {
         "service_worker": "background.js"
