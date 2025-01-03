@@ -1,0 +1,18 @@
+{
+    "manifest_version": 3,
+    "name": "Tab Scroll Switcher",
+    "version": "1.0",
+    "description": "Switch between tabs using Command + scroll",
+    "permissions": [
+        "tabs"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [
+        {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"]
+        }
+    ]
+}
