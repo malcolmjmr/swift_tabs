@@ -3,22 +3,29 @@
     "name": "Swift Tabs",
     "version": "1.0",
     "description": "Scroll through your tabs and windows",
+    "action": {
+        "default_title": "Swift Tabs"
+    },
     "options_ui": {
         "page": "options.html",
         "open_in_tab": true
     },
+    "host_permissions": [
+        "<all_urls>"
+    ],
     "permissions": [
         "tabs",
         "storage",
-        "scripting"
+        "scripting",
+        "readingList"
     ],
     "background": {
         "service_worker": "background.js"
     },
     "content_scripts": [
         {
-        "matches": ["<all_urls>"],
-        "js": ["content.js"]
+            "matches": ["<all_urls>"],
+            "js": ["content.js"]
         }
     ]
 }

@@ -12,6 +12,19 @@ document.addEventListener('input', (e) => {
             // Save updated settings
             chrome.storage.local.set({ settings });
         });
+    } else if (e.target.classList.contains('apiKey')) {
+        const key = e.target.id;
+        const value = e.target.value;
+        
+        // Get current settings and update
+        chrome.storage.local.get(['settings'], (data) => {
+            const settings = data.settings || { apiKeys: {} };
+            if (!settings.apiKeys) settings.apiKeys = {};
+            settings.apiKeys[key] = value;
+            
+            // Save updated settings
+            chrome.storage.local.set({ settings });
+        });
     }
 });
 
@@ -22,6 +35,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Update select elements with saved values
         Object.entries(settings.keys).forEach(([key, value]) => {
+            const select = document.getElementById(key);
+            if (select) {
+                select.value = value;
+            }
+        });
+        Object.entries(settings.apiKeys).forEach(([key, value]) => {
             const select = document.getElementById(key);
             if (select) {
                 select.value = value;
