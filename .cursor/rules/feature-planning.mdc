@@ -1,7 +1,5 @@
 ---
-description: 
-globs: 
-alwaysApply: true
+alwaysApply: false
 ---
 ---
 description: Instructs the AI to generate a detailed, interactive plan in comments using markdown task lists before implementing code for any feature or development task. The plan focuses on the user experience, functional goals, or logical steps for high-level tasks. Checkboxes ([ ]) track progress. Completed subtasks are removed, but completed parent tasks ([x]) remain.

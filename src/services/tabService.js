@@ -1,0 +1,54 @@
+// Service to handle tab operations through the background script
+export const tabService = {
+    async sendMessage(type, data = {}) {
+        return new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({ type, ...data }, response => {
+                if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                } else {
+                    resolve(response);
+                }
+            });
+        });
+    },
+
+    async getTabs() {
+        return this.sendMessage('GET_TABS');
+    },
+
+    async getWindows() {
+        return this.sendMessage('GET_WINDOWS');
+    },
+
+    async getCurrentWindow() {
+        return this.sendMessage('GET_CURRENT_WINDOW');
+    },
+
+    async activateTab(tabId) {
+        return this.sendMessage('ACTIVATE_TAB', { tabId });
+    },
+
+    async closeTab(tabId) {
+        return this.sendMessage('CLOSE_TAB', { tabId });
+    },
+
+    async pinTab(tabId) {
+        return this.sendMessage('PIN_TAB', { tabId });
+    },
+
+    async duplicateTab(tabId) {
+        return this.sendMessage('DUPLICATE_TAB', { tabId });
+    },
+
+    async reloadTab(tabId) {
+        return this.sendMessage('RELOAD_TAB', { tabId });
+    },
+
+    async createTab(options) {
+        return this.sendMessage('CREATE_TAB', options);
+    },
+
+    async moveTab(tabId, targetWindowId) {
+        return this.sendMessage('MOVE_TAB', { tabId, targetWindowId });
+    }
+};

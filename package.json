@@ -1,0 +1,27 @@
+{
+  "name": "swift_tabs",
+  "version": "1.0.0",
+  "description": "A Chrome extension for tab management with gesture controls",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "start": "npm run dev"
+  },
+  "keywords": [
+    "chrome-extension",
+    "svelte",
+    "tab-management"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "rollup": "^4.0.0",
+    "rollup-plugin-css-only": "^4.0.0",
+    "rollup-plugin-svelte": "^7.0.0",
+    "rollup-plugin-terser": "^7.0.0",
+    "svelte": "^4.0.0"
+  }
+}
