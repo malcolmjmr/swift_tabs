@@ -5,9 +5,9 @@
     */
 
     import { fade } from "svelte/transition";
-    import { tabStore } from "../stores/tabStore";
+    import { tabStore } from "../../stores/tabStore";
     import { createEventDispatcher } from "svelte";
-    import SwipeableContainer from "./SwipeableContainer.svelte";
+    import SwipeableContainer from "../SwipeableContainer.svelte";
 
     export let tab;
     export let isActive = false;

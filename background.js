@@ -1,28 +1,123 @@
-// Background script for Swift Tabs
-// This will handle communication between the Svelte app and Chrome APIs
+
+chrome.runtime.onInstalled.addListener(onInstalled);
+chrome.runtime.onMessage.addListener(onRuntimeMessage);
+chrome.tabs.onUpdated.addListener(onTabUpdated);
 
 
-chrome.runtime.onInstalled.addListener(() => {
+
+
+
+async function onInstalled() {
     console.log('Swift Tabs installed');
+    // const tabs = (await chrome.tabs.query({ currentWindow: true }));
+    // const activeTabIndex = tabs.findIndex(tab => tab.active);
+    // const tab = tabs[activeTabIndex - 1];
+    // chrome.tabs.reload(tab.id);
+
     chrome.tabs.query({}).then(tabs => {
-        // Inject the content script into all existing tabs on install/update
         for (const tab of tabs) {
-            chrome.tabs.reload(tab.id);
-            // // Only inject into tabs with a valid URL (not chrome://, etc.)
-            // if (tab.id && tab.url && /^https?:\/\//.test(tab.url)) {
-            //     console.log(`Injecting content script into tab ${tab.id}`);
-            //     chrome.scripting.executeScript({
-            //         target: { tabId: tab.id },
-            //         files: ["dist/content.js"]
-            //     }).catch(e => {
-            //         // Ignore errors for restricted pages
-            //         console.warn(`Could not inject content script into tab ${tab.id}:`, e);
-            //     });
-            // }
+            if (tab.id && tab.url && /^https?:\/\//.test(tab.url)) {
+                //injectContentScript(tab.id);
+                chrome.tabs.reload(tab.id);
+            }
         }
     });
-});
+}
 
+function onTabUpdated(tabId, changeInfo, tab) {
+    //console.log('Tab updated', tabId, changeInfo, tab);
+    chrome.runtime.sendMessage({
+        type: 'TAB_UPDATED',
+        tabId: tabId,
+        changeInfo: changeInfo,
+        tab: tab,
+    });
+}
+
+
+function injectContentScript(tabId) {
+    chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["dist/content.js"]
+    }).catch(e => {
+        console.warn(`Could not inject content script into tab ${tab.id}:`, e);
+    });
+}
+
+function onRuntimeMessage(message, sender, sendResponse) {
+    if (message.type === "TOOLBAR") {
+        onToolbarMessage(message);
+    } else if (message.type === "CHROME_API") {
+        chromeApiHandlers[message.endpoint](message.data)
+            .then(sendResponse)
+            .catch(error => sendResponse({ error: error.message }));
+    } else if (message.type === 'SCROLL') {
+        handleTabSwitch(message.scrollDelta, sender.tab.id);
+    } else if (message.type === 'GESTURE_MODE') {
+        onGestureModeMessage(message);
+    }
+    return true; // Indicates that sendResponse will be called asynchronously
+}
+
+var popupWindowId = null;
+var toolbarIsOpen = false;
+var isInGestureMode = false;
+let scrollDelta = 0;
+async function handleTabSwitch(scrollUpdate, tabId) {
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (currentTab.id !== tabId) {
+        return;
+    }
+
+    const scrollThreshold = 30;
+    scrollDelta += scrollUpdate;
+    if (Math.abs(scrollDelta) < scrollThreshold) {
+        return;
+    }
+
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    tabs.sort((a, b) => b.index - a.index);
+
+    const currentIndex = tabs.findIndex(tab => tab.id === currentTab.id);
+    let newIndex = currentIndex;
+    if (scrollDelta >= scrollThreshold) {
+        newIndex = currentIndex === tabs.length - 1 ? 0 : currentIndex + 1;
+    } else if (scrollDelta <= -scrollThreshold) {
+        newIndex = (currentIndex === 0) ? tabs.length - 1 : currentIndex - 1;
+    }
+
+    scrollDelta = 0;
+    await chrome.tabs.update(tabs[newIndex].id, { active: true });
+}
+
+async function onToolbarMessage(message) {
+
+    if (message.open == toolbarIsOpen) { return; }
+
+    toolbarIsOpen = message.open;
+    let tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+        chrome.tabs.sendMessage(tab.id, {
+            type: "TOOLBAR",
+            open: toolbarIsOpen,
+            x: message.x,
+            y: message.y,
+            tab,
+        });
+    }
+
+}
+
+async function onGestureModeMessage(message) {
+    isInGestureMode = message.isInGestureMode;
+    let tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+        chrome.tabs.sendMessage(tab.id, {
+            type: "GESTURE_MODE",
+            isInGestureMode: isInGestureMode,
+        });
+    }
+}
 
 // Helper function to get tabs in a window and current tab index
 async function getTabsInWindow(windowId) {
@@ -32,53 +127,55 @@ async function getTabsInWindow(windowId) {
     return { tabs, activeTab, activeTabIndex };
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === "gestureMode") {
-        (async () => {
-            const tabs = await chrome.tabs.query({}); // Query all tabs
-            const gestureModeActive = message.active;
+const chromeApiHandlers = {
+    async GET_TABS() {
+        const windows = await chrome.windows.getAll({ populate: true });
+        return windows.flatMap(w => w.tabs);
+    },
 
-            for (const tab of tabs) {
-                chrome.tabs.sendMessage(tab.id, { type: "gestureMode", active: gestureModeActive, }).catch(e => console.error("Error sending gesture mode toggle message:", e));
-            }
-            sendResponse({ success: true });
-        })();
-        return true; // Will respond asynchronously
-    } else if (message.type === "verticalScrollInGestureMode") {
-        handleVerticalScrollInGestureMode(message);
-        return true;
-    } else if (message.type === "navigateTabs") {
-        (async () => {
-            const { tabs, activeTabIndex } = await getTabsInWindow(sender.tab.windowId);
+    async GET_WINDOWS() {
+        return chrome.windows.getAll({ populate: true });
+    },
 
-            let nextIndex = activeTabIndex;
-            if (message.direction === "up") {
-                nextIndex = (activeTabIndex - 1 + tabs.length) % tabs.length;
-            } else if (message.direction === "down") {
-                nextIndex = (activeTabIndex + 1) % tabs.length;
-            }
+    async GET_CURRENT_WINDOW() {
+        return chrome.windows.getCurrent({ populate: true });
+    },
 
-            const nextTab = tabs[nextIndex];
-            if (nextTab) {
-                await chrome.tabs.update(nextTab.id, { active: true });
-                // Send updated tab info back to the newly active tab's content script
-                const updatedTabsInfo = await getTabsInfoForDisplay(nextTab.id, tabs);
-                chrome.tabs.sendMessage(nextTab.id, { type: "updateTabInfo", tabs: updatedTabsInfo }).catch(e => console.error("Error sending tab info update:", e));
-            }
-        })();
-    } else if (message.type === "requestTabInfo") {
-        (async () => {
-            console.log("Background.js: Received requestTabInfo from tab:", sender.tab.id);
-            const { tabs, activeTab } = await getTabsInWindow(sender.tab.windowId);
-            if (activeTab) {
-                const updatedTabsInfo = await getTabsInfoForDisplay(activeTab.id, tabs);
-                console.log("Background.js: Sending initial tab info to tab:", sender.tab.id, "Tabs:", updatedTabsInfo);
-                chrome.tabs.sendMessage(sender.tab.id, { type: "updateTabInfo", tabs: updatedTabsInfo }).catch(e => console.error("Error sending initial tab info:", e));
-            }
-        })();
+    async ACTIVATE_TAB({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        await chrome.windows.update(tab.windowId, { focused: true });
+        await chrome.tabs.update(tabId, { active: true });
+        return tab;
+    },
+
+    async CLOSE_TAB({ tabId }) {
+        await chrome.tabs.remove(tabId);
+        return { success: true };
+    },
+
+    async PIN_TAB({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        return chrome.tabs.update(tabId, { pinned: !tab.pinned });
+    },
+
+    async DUPLICATE_TAB({ tabId }) {
+        return chrome.tabs.duplicate(tabId);
+    },
+
+    async RELOAD_TAB({ tabId }) {
+        return chrome.tabs.reload(tabId);
+    },
+
+    async CREATE_TAB(options) {
+        return chrome.tabs.create(options);
+    },
+
+    async MOVE_TAB({ tabId, targetWindowId }) {
+        return chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 });
     }
-    return true; // Indicates that sendResponse will be called asynchronously
-});
+};
+
+
 
 async function getTabsInfoForDisplay(activeTabId, allTabsInWindow) {
     const activeTab = allTabsInWindow.find(tab => tab.id === activeTabId);
@@ -103,39 +200,4 @@ async function getTabsInfoForDisplay(activeTabId, allTabsInWindow) {
         }
     }
     return tabsInfo;
-}
-
-let scrollY = 0;
-
-async function handleVerticalScrollInGestureMode({ deltaY }) {
-
-    const verticalSwipeThreshold = 60;
-    const distance = Math.abs(deltaY);
-
-    const swipeThresholdNotMet = distance < verticalSwipeThreshold;
-
-    if (swipeThresholdNotMet) {
-        return;
-    }
-
-    const currentTab = (await chrome.tabs.query({
-        active: true,
-        currentWindow: true
-    }))[0];
-
-    // if (currentTab.id !== event.tabId) {
-    //     return;
-    // }
-
-
-
-    const nextIndex = currentTab.index + (SCROLL.y > 0 ? -1 : 1);
-    const nextTab = (await chrome.tabs.query({ index: nextIndex, currentWindow: true }))[0];
-
-    if (nextTab) {
-        chrome.tabs.update(nextTab.id, { active: true });
-    }
-
-
-
 }

@@ -1,14 +1,4 @@
 <script>
-    /*
-        TODO:
-        - Create views for ActiveTabView, TabsView, WindowsView, TabMenu, AssistantMenu, 
-        - Expanded and collapsed view should share the same tablist
-        - Need to persistently store the whether the last view was ActiveTabView, TabsView, WindowsView
-
-    */
-
-    import TabList from "./TabList.svelte";
-    import WindowDots from "./WindowDots.svelte";
     import {
         tabStore,
         currentWindowTabs,
@@ -18,46 +8,36 @@
     } from "../stores/tabStore";
     import { fade } from "svelte/transition";
     import { onMount } from "svelte";
-    import ActiveTabToolbar from "./ActiveTabToolbar.svelte";
-    import ExpandedToolbarFooter from "./ExpandedToolbarFooter.svelte";
-    import DesktopHeader from "./DesktopHeader.svelte";
 
-    export let x = 0;
-    export let y = 0;
-    export let visible = false;
+    import Menu from "./menu/Menu.svelte";
+    import ActiveTabLabel from "./ActiveTabLabel.svelte";
+    import TabsView from "./tabs_view/TabsView.svelte";
+    import NavigationBar from "./NavigationBar.svelte";
+    import QuickActions from "./menu/QuickActions.svelte";
 
-    let isExpanded = false;
+    export let mouseX = 0;
+    export let mouseY = 0;
+    export let currentTab = {};
+    export let toolbarIsInFocus = false;
+
     let activeTabIndex = 0;
     let currentWindow;
+    let selectedTab = null;
 
-    let showAllWindows = false;
+    let showTabsView = false;
+    let showActiveTabLabel = false;
+    let showNavigationBar = false;
+    let showQuickActions = false;
+    let showResourceView = false;
+    let showMenu = false;
 
     onMount(() => {
-        // Initialize the store when the component mounts
-        tabStore.init();
+        init();
     });
 
-    function handleWheel(event) {
-        // if (!isExpanded && $currentWindowTabs.length > 1) {
-        //     event.preventDefault();
-        //     if (event.deltaY > 0) {
-        //         // Scroll down - next tab
-        //         activeTabIndex = Math.min(
-        //             activeTabIndex + 1,
-        //             $currentWindowTabs.length - 1,
-        //         );
-        //         //tabStore.activateTab($currentWindowTabs[activeTabIndex].id);
-        //     } else {
-        //         // Scroll up - previous tab
-        //         activeTabIndex = Math.max(activeTabIndex - 1, 0);
-        //         //tabStore.activateTab($currentWindowTabs[activeTabIndex].id);
-        //     }
-        // }
-    }
-
-    function handleWindowSelect({ detail }) {
-        // Reset activeTabIndex when switching windows
-        activeTabIndex = 0;
+    async function init() {
+        selectedTab = currentTab;
+        await tabStore.init();
     }
 
     // Keep activeTabIndex in sync with actual active tab
@@ -70,62 +50,73 @@
         }
     }
 
-    function toggleExpanded() {
-        isExpanded = !isExpanded;
-    }
-
     // Get current window info
     $: currentWindow = $windows.find((w) => w.id === $activeWindowId);
 
-    // Get visible tabs based on expanded state
-    $: visibleTabs = $currentWindowTabs;
+    let openWindows = [];
+    $: openWindows = $windows.filter((w) => w.tabs.length > 0);
+
+    let activeTab;
+    $: activeTab = $currentWindowTabs.find((t) => t.id === $activeTabId);
+    $: selectedTab = currentTab;
+
+    function handleMouseEnter() {
+        toolbarIsInFocus = true;
+        //showTabsView = true;
+        //showNavigationBar = true;
+        //showQuickActions = true;
+        //showResourceView = true;
+    }
+    function handleMouseLeave() {
+        toolbarIsInFocus = false;
+        // showTabsView = false;
+        // showNavigationBar = false;
+        // showQuickActions = false;
+        // showResourceView = false;
+    }
 </script>
 
-{#if visible}
-    <div
-        class="toolbar"
-        class:expanded={isExpanded}
-        style="left: {Math.min(
-            Math.max(x - 160, 0),
-            window.innerWidth - 320,
-        )}px; top: {Math.min(Math.max(y - 50, 0), window.innerHeight - 100)}px;"
-        on:wheel={handleWheel}
-        transition:fade={{ duration: 150 }}
-    >
-        {#if isExpanded && !showAllWindows}
-            <DesktopHeader {currentWindow} />
-        {/if}
-
-        <div class="tab-container" class:expanded={isExpanded}>
-            <TabList tabs={visibleTabs} activeTabId={$activeTabId} />
-        </div>
-        {#if !isExpanded}
-            <ActiveTabToolbar {toggleExpanded} />
-        {:else}
-            <ExpandedToolbarFooter {toggleExpanded} />
-        {/if}
-    </div>
-{/if}
+<div
+    class="toolbar"
+    transition:fade={{ duration: 150 }}
+    on:mouseenter={handleMouseEnter}
+    on:mouseleave={handleMouseLeave}
+>
+    {#if showTabsView && openWindows.length > 0}
+        <TabsView windows={openWindows} {currentTab} {selectedTab} />
+    {/if}
+    {#if activeTab}
+        <ActiveTabLabel tab={selectedTab} />
+    {/if}
+    {#if true}
+        <NavigationBar bind:showMenu bind:showTabsView bind:showResourceView />
+    {/if}
+    {#if showQuickActions}
+        <QuickActions />
+    {/if}
+    {#if showMenu}
+        <Menu />
+    {/if}
+</div>
 
 <style>
     .toolbar {
         position: fixed;
         z-index: 999999;
-        background: white;
+        width: 300px;
+        max-height: calc(100% - 20px);
+        overflow: hidden;
+        background-color: #111;
+        border: 1px solid #555;
+
         border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-        width: 320px;
-        overflow: hidden;
-    }
+        bottom: 10px;
+        left: 10px;
 
-    .tab-container {
-        position: relative;
-        height: 50px;
-        overflow: hidden;
-    }
-
-    .tab-container.expanded {
-        height: 400px;
-        margin-bottom: 50px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 8px;
+        opacity: 0.9;
     }
 </style>

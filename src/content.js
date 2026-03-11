@@ -1,5 +1,3 @@
-// Content script for Swift Tabs
-// This file will mount our Svelte app into the page
 
 import App from './App.svelte';
 
@@ -24,11 +22,18 @@ function cleanup() {
     }
 }
 
+function addHeaderLinks() {
+    const materialSymbolsLink = document.createElement('link');
+    materialSymbolsLink.rel = 'stylesheet';
+    materialSymbolsLink.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200';
+    document.head.appendChild(materialSymbolsLink);
+}
+
 function mount() {
     try {
         cleanup();
         const mountPoint = createMountPoint();
-
+        addHeaderLinks();
         app = new App({
             target: mountPoint
         });

@@ -17,11 +17,11 @@
             "matches": [
                 "<all_urls>"
             ],
-            "css": [
-                "dist/content.css"
-            ],
             "js": [
                 "dist/content.js"
+            ],
+            "css": [
+                "dist/content.css"
             ]
         }
     ],

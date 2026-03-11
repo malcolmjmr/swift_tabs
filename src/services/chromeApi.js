@@ -1,8 +1,12 @@
 // Service to handle tab operations through the background script
-export const tabService = {
-    async sendMessage(type, data = {}) {
+export const chromeService = {
+    async sendMessage(endpoint, data = {}) {
         return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({ type, ...data }, response => {
+            chrome.runtime.sendMessage({
+                type: "CHROME_API",
+                endpoint,
+                data
+            }, response => {
                 if (chrome.runtime.lastError) {
                     reject(chrome.runtime.lastError);
                 } else {
@@ -51,4 +55,6 @@ export const tabService = {
     async moveTab(tabId, targetWindowId) {
         return this.sendMessage('MOVE_TAB', { tabId, targetWindowId });
     }
+
+
 };

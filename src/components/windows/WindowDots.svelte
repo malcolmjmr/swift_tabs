@@ -1,6 +1,4 @@
 <script>
-    import WindowOverview from "./WindowOverview.svelte";
-    import { tabStore } from "../stores/tabStore";
     import { createEventDispatcher } from "svelte";
 
     export let windows = [];
@@ -11,14 +9,7 @@
     let longPressTimer;
 
     function handleWindowClick(windowId) {
-        const window = windows.find((w) => w.id === windowId);
-        if (window) {
-            const activeTab = window.tabs.find((t) => t.active);
-            if (activeTab) {
-                tabStore.activateTab(activeTab.id);
-                dispatch("windowSelect", { windowId });
-            }
-        }
+        dispatch("windowSelect", { windowId });
     }
 
     function handleMouseDown() {
@@ -54,14 +45,6 @@
             aria-label={window.title || "Window " + window.id}
         ></button>
     {/each}
-
-    {#if showOverview}
-        <WindowOverview
-            {windows}
-            {activeWindowId}
-            onWindowSelect={handleWindowOverviewSelect}
-        />
-    {/if}
 </div>
 
 <style>

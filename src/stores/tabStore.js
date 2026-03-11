@@ -1,5 +1,5 @@
 import { writable, derived } from "svelte/store";
-import { tabService } from "../services/tabService";
+import { chromeService } from "../services/chromeApi";
 
 const createTabStore = () => {
     const { subscribe, set, update } = writable({
@@ -17,7 +17,7 @@ const createTabStore = () => {
             if (store.initialized) return;
 
             try {
-                const windows = await tabService.getWindows();
+                const windows = await chromeService.getWindows();
                 const activeWindow = windows.find(w => w.focused);
                 const activeTab = activeWindow?.tabs.find(t => t.active);
 
@@ -33,6 +33,7 @@ const createTabStore = () => {
                 // Set up listeners for tab changes
                 chrome.runtime.onMessage.addListener((message) => {
                     if (message.type === 'TAB_UPDATED') {
+                        console.log('tab updated', message);
                         store.refreshState();
                     }
                 });
@@ -43,7 +44,7 @@ const createTabStore = () => {
         },
 
         async refreshState() {
-            const windows = await tabService.getWindows();
+            const windows = await chromeService.getWindows();
             const activeWindow = windows.find(w => w.focused);
             const activeTab = activeWindow?.tabs.find(t => t.active);
 
@@ -57,37 +58,37 @@ const createTabStore = () => {
         },
 
         async closeTab(tabId) {
-            await tabService.closeTab(tabId);
+            await chromeService.closeTab(tabId);
             await store.refreshState();
         },
 
         async pinTab(tabId) {
-            await tabService.pinTab(tabId);
+            await chromeService.pinTab(tabId);
             await store.refreshState();
         },
 
         async duplicateTab(tabId) {
-            await tabService.duplicateTab(tabId);
+            await chromeService.duplicateTab(tabId);
             await store.refreshState();
         },
 
         async reloadTab(tabId) {
-            await tabService.reloadTab(tabId);
+            await chromeService.reloadTab(tabId);
             await store.refreshState();
         },
 
         async createTab(options = {}) {
-            await tabService.createTab(options);
+            await chromeService.createTab(options);
             await store.refreshState();
         },
 
         async activateTab(tabId) {
-            await tabService.activateTab(tabId);
+            await chromeService.activateTab(tabId);
             await store.refreshState();
         },
 
         async moveTab(tabId, targetWindowId) {
-            await tabService.moveTab(tabId, targetWindowId);
+            await chromeService.moveTab(tabId, targetWindowId);
             await store.refreshState();
         }
     };

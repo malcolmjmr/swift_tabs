@@ -1,175 +1,262 @@
 <script>
+    import { onMount } from "svelte";
+    import Toolbar from "./components/Toolbar.svelte";
+    import TabPreviews from "./components/tab/TabPreviews.svelte";
+    import { currentWindowTabs, activeTabId } from "./stores/tabStore";
+    import { chromeService } from "./services/chromeApi";
+
     /*
-        Todo:
-        - Create invisible background to click out of toolbar 
+
+        HotCorners (bottom left and bottom right)
+
+        Toolbar (visible when not scrolling down, or when in gesture mode)
+        - TabsView
+        - ActiveTabLabel
+        - MainToolbarActions (back, forward, create, tabs, more)
+        - QuickAction
+        - Menu
+
+        Background variables
+        - isInGesturemode
+        - toolbarIsOpen
+
+       
+
+        Message Types
+        - TOOLBAR (open, x, y)
+        - SCROLL 
+
     */
 
-    // This will handle communication between the Svelte app and Chrome APIs
+    let isInGestureMode = false;
+    let toolbarIsOpen = false;
+    let toolbarIsInFocus = false;
 
-    import ActiveTabInfo from "./components/ActiveTabInfo.svelte"; // Import ActiveTabInfo
-    import { onMount } from "svelte";
-    import { tabStore } from "./stores/tabStore";
-
-    let toolbarVisible = false;
     let mouseX = 0;
     let mouseY = 0;
-    let gestureModeActive = false; // New flag for gesture mode
-    let displayedTabsInfo = []; // To store tab info for display
+
+    let settings = {};
 
     let rightClickTimer;
-    const longPressThreshold = 500; // milliseconds
+    const longPressThreshold = 500;
 
     onMount(async () => {
-        // Listen for messages from the background script as early as possible
-        chrome.runtime.onMessage.addListener((message) => {
-            if (message.type === "gestureMode") {
-                // Changed from "deactivateGestureMode"
-                gestureModeActive = message.active; // Update based on the message.active property
-                if (!message.active) {
-                    // Only hide toolbar/clear info if deactivating
-                    toolbarVisible = false; // Hide any active widget
-                    displayedTabsInfo = []; // Clear displayed info
-                }
-            } else if (message.type === "updateTabInfo") {
-                displayedTabsInfo = message.tabs;
-            }
-        });
+        console.log("App mounted");
+        addChromeRuntimeMessageListener();
+        document.addEventListener("wheel", handleWheel, { passive: false });
+        loadSettings();
     });
 
+    function addChromeRuntimeMessageListener() {
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message.type === "TOOLBAR") {
+                onToolbarMessage(message);
+            } else if (message.type === "GESTURE_MODE") {
+                onGestureModeMessage(message);
+            }
+        });
+    }
+
+    function loadSettings() {
+        chrome.storage.local.get(["settings"], (data) => {
+            const settingsIsEmpty =
+                true ||
+                data.settings == null ||
+                Object.keys(data.settings).length == 0;
+            settings = settingsIsEmpty
+                ? {
+                      toolbarInPopup: false,
+                      openToolbarWithMetaKey: false,
+                      queueLinkWithMetaKey: false,
+                      copyImageWithMetaKey: false,
+                      defaultView: "windows",
+                  }
+                : data.settings;
+        });
+    }
+
+    let currentTab = null;
+
+    function onToolbarMessage(message) {
+        toolbarIsOpen = message.open;
+        if (toolbarIsOpen) {
+            mouseX = message.x;
+            mouseY = message.y;
+        }
+        if (currentTab != message.tab) {
+            currentTab = message.tab;
+        }
+    }
+
+    function onGestureModeMessage(message) {
+        isInGestureMode = message.isInGestureMode;
+    }
+
     function handleRightClick(event) {
-        if (!gestureModeActive) {
-            // Right-click button
-            event.preventDefault(); // Prevent default context menu initially
+        /*
+            determine if link, image or page is clicked
+            if link => queue within tab (how should i store tab data?)
+            if image => copy image url
+            if page => open toolbar
+        */
 
-            if (toolbarVisible) {
-                // If toolbar is visible, prevent showing another one
-                // This also ensures context menu is suppressed while widget is open
-                return;
-            }
-
-            // Check if any text is selected
-            if (window.getSelection().toString().length > 0) {
-                return;
-            }
-
-            // Start timer for long press
-            rightClickTimer = setTimeout(() => {
-                // Long press detected - activate Overview Widget
-                mouseX = event.clientX;
-                mouseY = event.clientY;
-                toolbarVisible = true; // ToolbarVisible now controls Overview Widget
-                gestureModeActive = false; // Ensure gesture mode is off for Overview Widget
-                chrome.runtime.sendMessage({
-                    type: "gestureMode",
-                    active: false,
-                });
-            }, longPressThreshold);
-        } else {
-            // If gesture mode is active, do nothing
-            gestureModeActive = false;
+        if (toolbarIsOpen) {
+            // send message to hide toolbar
             return;
+        } else {
+            const textIsSelected = window.getSelection().toString().length > 0;
+            const isMetaKeyPressed = event.metaKey;
+
+            if (textIsSelected) {
+                if (isMetaKeyPressed) {
+                    console.log("queue search");
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            const linkClicked = event.target.tagName === "A";
+            if (linkClicked) {
+                if (settings.queueLinkWithMetaKey == isMetaKeyPressed) {
+                    console.log("queue link");
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            const imageClicked = event.target.tagName === "IMG";
+            if (imageClicked) {
+                if (settings.copyImageWithMetaKey == isMetaKeyPressed) {
+                    console.log("copy image");
+                    event.preventDefault();
+                }
+                return;
+            }
+
+            if (settings.openToolbarWithMetaKey == isMetaKeyPressed) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                chrome.runtime.sendMessage({
+                    type: "TOOLBAR",
+                    open: true,
+                    x: event.clientX,
+                    y: event.clientY,
+                });
+
+                rightClickTimer = setTimeout(() => {
+                    console.log("long press detected");
+                }, longPressThreshold);
+            }
         }
     }
 
-    function handleMouseDown(event) {
-        if (gestureModeActive) {
-            gestureModeActive = false;
-            displayedTabsInfo = []; // Clear displayed info
-            // Notify background script that gesture mode is inactive
-            chrome.runtime.sendMessage({ type: "gestureMode", active: false });
-        }
-    }
+    function handleMouseDown(event) {}
 
     function handleMouseUp(event) {
         if (event.button === 2) {
             // Right-click button
             clearTimeout(rightClickTimer);
-            if (!toolbarVisible && !gestureModeActive) {
-                // Only if not already active from long press
-                // Short press detected - activate Active Tab Info and Gesture Mode
-                mouseX = event.clientX;
-                mouseY = event.clientY;
-                // For now, toolbarVisible will be used to show ActiveTabInfo
-                toolbarVisible = true;
-                gestureModeActive = true;
-                // When gesture mode is activated, request initial tab info
-                chrome.runtime.sendMessage({
-                    type: "gestureMode",
-                    active: true,
-                });
-                chrome.runtime.sendMessage({ type: "requestTabInfo" }); // Request initial tab info
-            }
+            console.log("right click mouse up");
+        }
+        if (removeTabOnMouseUp) {
+            console.log("remove tab");
+            //chromeService.closeTab(activeTabId);
+        } else if (moveTabOnMouseUp) {
+            console.log("move tab");
+            //chromeService.moveTab(activeTabId, targetWindowId);
         }
     }
 
     function handleClick(event) {
-        // Hide toolbar/overview widget when clicking outside
-        if (
-            toolbarVisible &&
-            !event.target.closest(".active-tab-info-container")
-        ) {
-            // Use new class for targeting
-            toolbarVisible = false;
-            displayedTabsInfo = []; // Clear displayed info
-        }
-        // Deactivate gesture mode when clicking anywhere on the page
-        if (gestureModeActive) {
-            gestureModeActive = false;
-            displayedTabsInfo = []; // Clear displayed info
-            // Notify background script that gesture mode is inactive
-            chrome.runtime.sendMessage({ type: "gestureMode", active: false });
-        }
+        chrome.runtime.sendMessage({
+            type: "TOOLBAR",
+            open: false,
+        });
     }
 
     function handleKeydown(event) {
-        if (event.key === "Escape" && (toolbarVisible || gestureModeActive)) {
-            toolbarVisible = false;
-            gestureModeActive = false;
-            displayedTabsInfo = []; // Clear displayed info
-            // Notify background script that gesture mode is inactive
-            chrome.runtime.sendMessage({ type: "gestureMode", active: false });
+        let isNotInputField =
+            !document.activeElement.matches("input, textarea");
+        if (isNotInputField) {
+            if (event.key === " ") {
+                event.preventDefault();
+                event.stopPropagation();
+                chrome.runtime.sendMessage({
+                    type: "GESTURE_MODE",
+                    isInGestureMode: !isInGestureMode,
+                });
+                chrome.runtime.sendMessage({
+                    type: "TOOLBAR",
+                    open: !toolbarIsOpen,
+                });
+            } else {
+                let textSelection = window.getSelection().toString();
+                if (textSelection.length > 0) {
+                    if (event.key === "c") {
+                        navigator.clipboard.writeText(textSelection);
+                    }
+                    if (event.key === "g") {
+                        window.open(
+                            "https://www.google.com/search?q=" + textSelection,
+                        );
+                    }
+                }
+            }
         }
     }
 
-    let lastWheelTime = 0;
-    const wheelDebounceTime = 100; // milliseconds
-
     function handleWheel(event) {
-        if (gestureModeActive) {
-            event.preventDefault(); // Prevent default scroll behavior
-
-            const currentTime = Date.now();
-            if (currentTime - lastWheelTime < wheelDebounceTime) {
-                return; // Debounce wheel events
+        if (!toolbarIsInFocus && (isInGestureMode || event.metaKey)) {
+            let isVerticalScroll =
+                Math.abs(event.deltaX) < Math.abs(event.deltaY);
+            if (isVerticalScroll) {
+                chrome.runtime.sendMessage({
+                    type: "SCROLL",
+                    scrollDelta: event.deltaY,
+                });
+            } else {
+                handleHorizontalScroll(event.deltaX);
             }
-            lastWheelTime = currentTime;
+            event.preventDefault();
+            event.stopPropagation();
 
-            // Flip the direction: deltaY > 0 means scroll down (next tab), deltaY < 0 means scroll up (previous tab)
-            const direction = event.deltaY > 0 ? "down" : "up";
-            chrome.runtime.sendMessage({
-                type: "navigateTabs",
-                direction: direction,
-            });
-            chrome.runtime.sendMessage({ type: "requestTabInfo" }); // Request updated tab info after navigation
+            // Prevent default scrolling behavior
+        }
+    }
+
+    let scrollDelta = 0;
+    let removeTabOnMouseUp = false;
+    let moveTabOnMouseUp = false;
+    async function handleHorizontalScroll(scrollUpdate) {
+        const scrollThreshold = 60;
+        const previousScrollDelta = scrollDelta;
+        scrollDelta += scrollUpdate;
+        if (Math.abs(scrollDelta) < scrollThreshold) {
+            if (previousScrollDelta > scrollThreshold) {
+                removeTabOnMouseUp = false;
+            } else if (previousScrollDelta < -scrollThreshold) {
+                moveTabOnMouseUp = false;
+            }
+        } else {
+            if (scrollDelta >= scrollThreshold) {
+                removeTabOnMouseUp = true;
+            } else if (scrollDelta <= -scrollThreshold) {
+                moveTabOnMouseUp = true;
+            }
         }
     }
 </script>
 
 <svelte:window
-    on:click={handleClick}
     on:keydown={handleKeydown}
     on:contextmenu={handleRightClick}
     on:mousedown={handleMouseDown}
     on:mouseup={handleMouseUp}
-    on:wheel={handleWheel}
 />
 
-{#if gestureModeActive}
-    <ActiveTabInfo x={mouseX} y={mouseY} tabs={displayedTabsInfo} />
-    <!-- Add debug statement for displayedTabsInfo -->
-{:else if toolbarVisible}
-    <!-- This will be for the Overview Widget later -->
-    <!-- <Toolbar visible={toolbarVisible} x={mouseX} y={mouseY} /> -->
+{#if toolbarIsOpen}
+    <Toolbar {currentTab} bind:toolbarIsInFocus />
 {/if}
 
 <style>
@@ -177,5 +264,34 @@
         margin: 0;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
             Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    }
+
+    :global(#swift-tabs-root) {
+        position: relative;
+        z-index: 999999;
+    }
+    :global(button) {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        cursor: pointer;
+    }
+
+    :global(.material-symbols-rounded) {
+        font-variation-settings:
+            "FILL" 0,
+            "wght" 100,
+            "GRAD" 0,
+            "opsz" 48;
+    }
+    .toolbar-background {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+
+        z-index: 999998;
     }
 </style>
