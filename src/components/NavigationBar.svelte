@@ -5,7 +5,7 @@
     export let showMenu = false;
     export let showTabsView = false;
     export let showResourceView = false;
-
+    export let viewType = "icon";
     function handleCreateTab() {
         chromeService.createTab({ active: true });
     }
@@ -27,7 +27,13 @@
 
     <div
         class="navigation-bar-item"
-        on:click={() => (showTabsView = !showTabsView)}
+        on:click={() =>
+            (viewType =
+                viewType === "icon"
+                    ? "list"
+                    : viewType === "list"
+                      ? "gallery"
+                      : "icon")}
     >
         <span class="material-symbols-rounded">select_window_2</span>
     </div>
@@ -40,10 +46,15 @@
     .navigation-bar {
         display: flex;
         flex-direction: row;
-        justify-content: space-around;
+        justify-content: space-between;
         align-items: center;
         gap: 5px;
+        /* border-top: 1px solid #555; */
+        width: calc(100% - 20px);
+        margin: 0 10px;
+        padding: 0px 0px 0px;
     }
+
     .navigation-bar-item {
         padding: 5px;
         border-radius: 5px;

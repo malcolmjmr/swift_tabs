@@ -16,6 +16,14 @@ export const chromeService = {
         });
     },
 
+    async getCurrentTab() {
+        return this.sendMessage('GET_CURRENT_TAB');
+    },
+
+    async getTab(tabId) {
+        return this.sendMessage('GET_TAB', { tabId });
+    },
+
     async getTabs() {
         return this.sendMessage('GET_TABS');
     },
@@ -54,7 +62,9 @@ export const chromeService = {
 
     async moveTab(tabId, targetWindowId) {
         return this.sendMessage('MOVE_TAB', { tabId, targetWindowId });
+    },
+
+    async focusWindow(windowId) {
+        return this.sendMessage('FOCUS_WINDOW', { windowId });
     }
-
-
 };

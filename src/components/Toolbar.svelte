@@ -17,7 +17,7 @@
 
     export let mouseX = 0;
     export let mouseY = 0;
-    export let currentTab = {};
+    export let currentTab = null;
     export let toolbarIsInFocus = false;
 
     let activeTabIndex = 0;
@@ -30,7 +30,7 @@
     let showQuickActions = false;
     let showResourceView = false;
     let showMenu = false;
-
+    let viewType = "icon";
     onMount(() => {
         init();
     });
@@ -62,15 +62,15 @@
 
     function handleMouseEnter() {
         toolbarIsInFocus = true;
-        //showTabsView = true;
-        //showNavigationBar = true;
+        showTabsView = true;
+        showNavigationBar = true;
         //showQuickActions = true;
         //showResourceView = true;
     }
     function handleMouseLeave() {
         toolbarIsInFocus = false;
         // showTabsView = false;
-        // showNavigationBar = false;
+        //showNavigationBar = false;
         // showQuickActions = false;
         // showResourceView = false;
     }
@@ -78,19 +78,34 @@
 
 <div
     class="toolbar"
+    class:toolbar-is-in-focus={toolbarIsInFocus}
     transition:fade={{ duration: 150 }}
     on:mouseenter={handleMouseEnter}
     on:mouseleave={handleMouseLeave}
 >
     {#if showTabsView && openWindows.length > 0}
-        <TabsView windows={openWindows} {currentTab} {selectedTab} />
+        <TabsView
+            windows={openWindows}
+            bind:currentTab
+            bind:selectedTab
+            {viewType}
+        />
     {/if}
-    {#if activeTab}
-        <ActiveTabLabel tab={selectedTab} />
-    {/if}
-    {#if true}
-        <NavigationBar bind:showMenu bind:showTabsView bind:showResourceView />
-    {/if}
+
+    <div class="selected-tab-container">
+        {#if selectedTab}
+            <ActiveTabLabel tab={selectedTab} />
+        {/if}
+
+        {#if showNavigationBar}
+            <NavigationBar
+                bind:showMenu
+                bind:showTabsView
+                bind:showResourceView
+                bind:viewType
+            />
+        {/if}
+    </div>
     {#if showQuickActions}
         <QuickActions />
     {/if}
@@ -106,8 +121,8 @@
         width: 300px;
         max-height: calc(100% - 20px);
         overflow: hidden;
-        background-color: #111;
-        border: 1px solid #555;
+        /* background-color: #111; */
+        /* border: 1px solid #555; */
 
         border-radius: 12px;
         bottom: 10px;
@@ -116,7 +131,19 @@
         display: flex;
         flex-direction: column;
         justify-content: center;
-        gap: 8px;
-        opacity: 0.9;
+
+        opacity: 0.95;
+    }
+    .toolbar-is-in-focus {
+        /* padding: 10px; */
+    }
+
+    .selected-tab-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        background-color: #333;
     }
 </style>

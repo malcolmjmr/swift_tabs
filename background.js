@@ -48,20 +48,22 @@ function onRuntimeMessage(message, sender, sendResponse) {
     if (message.type === "TOOLBAR") {
         onToolbarMessage(message);
     } else if (message.type === "CHROME_API") {
-        chromeApiHandlers[message.endpoint](message.data)
+        chromeApiHandlers[message.endpoint](message.data, sender)
             .then(sendResponse)
             .catch(error => sendResponse({ error: error.message }));
     } else if (message.type === 'SCROLL') {
         handleTabSwitch(message.scrollDelta, sender.tab.id);
-    } else if (message.type === 'GESTURE_MODE') {
-        onGestureModeMessage(message);
+    } else if (message.type === 'TAB_SWITCHED') {
+        notifyActiveTabOfTabSwitchingMode();
+    } else if (message.type === 'NAVIGATION_MODE') {
+        onNavigationModeMessage(message);
     }
     return true; // Indicates that sendResponse will be called asynchronously
 }
 
 var popupWindowId = null;
 var toolbarIsOpen = false;
-var isInGestureMode = false;
+var isInNavigationMode = false;
 let scrollDelta = 0;
 async function handleTabSwitch(scrollUpdate, tabId) {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -69,7 +71,7 @@ async function handleTabSwitch(scrollUpdate, tabId) {
         return;
     }
 
-    const scrollThreshold = 30;
+    const scrollThreshold = 33;
     scrollDelta += scrollUpdate;
     if (Math.abs(scrollDelta) < scrollThreshold) {
         return;
@@ -87,7 +89,26 @@ async function handleTabSwitch(scrollUpdate, tabId) {
     }
 
     scrollDelta = 0;
-    await chrome.tabs.update(tabs[newIndex].id, { active: true });
+    const newActiveTabId = tabs[newIndex].id;
+    await chrome.tabs.update(newActiveTabId, { active: true });
+    await notifyTabOfTabSwitchingMode(newActiveTabId);
+}
+
+async function notifyActiveTabOfTabSwitchingMode() {
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.id) {
+        await notifyTabOfTabSwitchingMode(activeTab.id);
+    }
+}
+
+async function notifyTabOfTabSwitchingMode(tabId) {
+    try {
+        await chrome.tabs.sendMessage(tabId, {
+            type: "TAB_SWITCHING_MODE",
+        });
+    } catch (e) {
+        // Content script may not be loaded (e.g. chrome:// pages)
+    }
 }
 
 async function onToolbarMessage(message) {
@@ -108,13 +129,13 @@ async function onToolbarMessage(message) {
 
 }
 
-async function onGestureModeMessage(message) {
-    isInGestureMode = message.isInGestureMode;
+async function onNavigationModeMessage(message) {
+    isInNavigationMode = message.isInNavigationMode;
     let tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
         chrome.tabs.sendMessage(tab.id, {
-            type: "GESTURE_MODE",
-            isInGestureMode: isInGestureMode,
+            type: "NAVIGATION_MODE",
+            isInNavigationMode: isInNavigationMode,
         });
     }
 }
@@ -128,6 +149,17 @@ async function getTabsInWindow(windowId) {
 }
 
 const chromeApiHandlers = {
+
+    async GET_CURRENT_TAB(_, { tab }) {
+        console.log("GET_CURRENT_TAB", tab);
+        return tab;
+    },
+
+
+    async GET_TAB({ tabId }) {
+        return chrome.tabs.get(tabId);
+    },
+
     async GET_TABS() {
         const windows = await chrome.windows.getAll({ populate: true });
         return windows.flatMap(w => w.tabs);
@@ -172,6 +204,11 @@ const chromeApiHandlers = {
 
     async MOVE_TAB({ tabId, targetWindowId }) {
         return chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 });
+    },
+
+    async FOCUS_WINDOW({ windowId }) {
+        await chrome.windows.update(windowId, { focused: true });
+        return { success: true };
     }
 };
 

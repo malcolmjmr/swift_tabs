@@ -28,8 +28,12 @@
         display: flex;
         flex-direction: column;
 
-        width: 100%;
-        padding: 10px 0px;
+        width: 250px;
+        padding: 8px;
+        border-radius: 8px;
+        background-color: #333;
+        font-size: 14px;
+        font-family: system-ui;
     }
     .list-view-container {
         display: flex;
@@ -50,6 +54,7 @@
         transition: background-color 0.2s;
         width: calc(100% - 10px);
         cursor: pointer;
+        color: white;
     }
     .list-view-item:hover {
         background-color: #222;
