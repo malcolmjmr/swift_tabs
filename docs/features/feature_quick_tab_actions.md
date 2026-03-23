@@ -54,17 +54,13 @@ Provide one-click access to common tab actions directly from the gesture interfa
 
 **Trigger:** Click star/bookmark icon
 
-**Behavior - Unsaved Window:**
+**Behavior:**
 - Opens bookmark folder selector
 - User selects folder or creates new
 - Tab saved as bookmark in selected location
+- Shows "Saved to [Folder Name]" confirmation
 
-**Behavior - Saved Window ("Space"):**
-- Auto-saves to matching bookmark folder (same name as space)
-- Shows "Saved to [Space Name]" confirmation
-- No user input required
-
-**Behavior - Already Bookmarked:**
+**Already Bookmarked:**
 - Shows bookmark details in editable form
 - User can change folder, edit title, remove bookmark
 
@@ -73,7 +69,7 @@ Provide one-click access to common tab actions directly from the gesture interfa
 - Stores bookmark ID to detect existing bookmarks
 - Syncs with Chrome's bookmark bar/folders
 
-**Status:** 🔄 Partially Implemented (needs session integration)
+**Status:** 🔄 Partially Implemented (basic bookmarking only)
 
 ---
 
@@ -108,6 +104,56 @@ Provide one-click access to common tab actions directly from the gesture interfa
 
 ---
 
+#### 6. Mute/Unmute Tab
+
+**Trigger:** Available in menu (shows only if tab is playing audio)
+
+**Behavior:**
+- Toggles muted state for the tab
+- Shows speaker icon with slash when muted
+
+**Technical:**
+- Uses: `chrome.tabs.update(tabId, { muted: true/false })`
+- Check `tab.audible` to show/hide action
+
+**Status:** 📋 Planned
+
+---
+
+#### 7. Discard Tab
+
+**Trigger:** Available in menu (for inactive tabs)
+
+**Behavior:**
+- Unloads tab to free memory
+- Tab stays in tab bar but shows as inactive
+- Clicking discarded tab reloads it
+
+**Technical:**
+- Uses: `chrome.tabs.discard(tabId)`
+- Only available for inactive tabs (not currently active)
+
+**Status:** 📋 Planned
+
+---
+
+#### 8. Close Actions
+
+**Trigger:** Available in menu
+
+**Actions:**
+- **Close Tab:** Close with optional undo
+- **Close Other Tabs:** Close all tabs except this one
+- **Close Tabs to Right:** Close all tabs after this one
+
+**Technical:**
+- Uses: `chrome.tabs.remove(tabId)` or `chrome.tabs.remove([tabIds])`
+- Close with undo uses temporary undo buffer
+
+**Status:** 📋 Planned (see also Feature: Tab Close with Undo)
+
+---
+
 ### UI Layout
 
 ```
@@ -137,9 +183,19 @@ Provide one-click access to common tab actions directly from the gesture interfa
 
 ---
 
+### Related Features
+
+These actions are consolidated in the comprehensive Tab Context Menu:
+- [Feature: Tab Context Menu](./feature_tab_context_menu.md)
+- [Feature: Move to New Window](./feature_move_to_new_window.md)
+- [Feature: Tab Close with Undo](./feature_tab_close_undo.md)
+
+---
+
 ### Future Considerations
 
-- **Mute/Unmute:** Audio indicator in tab display
-- **Discard/Undiscard:** Memory management for inactive tabs
-- **Move to New Window:** Alternative to complex move menu
-- **Send to Device:** Chrome sync integration
+- **Send to Device:** Chrome sync integration for sending tabs to other devices
+- **Add to Reading List:** Safari/Chrome reading list integration
+- **Create QR Code:** Generate QR code for current page URL
+- **Translate Page:** Quick access to page translation
+- **Screenshot:** Capture current tab as image

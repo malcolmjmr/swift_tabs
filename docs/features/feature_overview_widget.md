@@ -8,7 +8,7 @@
 
 ### Description
 
-A comprehensive window and tab management interface activated by long-press right-click. Provides bird's-eye view of all open tabs and windows with navigation, organization, and management capabilities.
+A comprehensive window and tab management interface activated by long-press right-click. Provides bird's-eye view of all open tabs and windows with navigation and creation capabilities.
 
 ---
 
@@ -28,7 +28,7 @@ A comprehensive window and tab management interface activated by long-press righ
 
 ```
 ┌─────────────────────────────────────────────┐
-│  [★ Save]  Window Title          [× Close] │  ← Header
+│          Window Title              [× Close] │  ← Header
 ├─────────────────────────────────────────────┤
 │                                             │
 │  ┌─────────────────────────────────────┐   │
@@ -43,8 +43,8 @@ A comprehensive window and tab management interface activated by long-press righ
 │  └─────────────────────────────────────┘   │
 │                                             │
 ├─────────────────────────────────────────────┤
-│  [+]   ● ○ ○ ○ ○   (3 windows, 12 tabs)  [↗]│  ← Footer
-│  Create  Window Dots    Stats           Expand│
+│  [+]   ● ○ ○ ○ ○   (3 windows, 12 tabs)    │  ← Footer
+│  Create  Window Dots    Stats              │
 └─────────────────────────────────────────────┘
 ```
 
@@ -54,14 +54,8 @@ A comprehensive window and tab management interface activated by long-press righ
 
 #### 1. Header
 
-**Left - Save Button:**
-- Star icon
-- Saves unsaved window as session
-- Click prompts for/edit title
-
 **Center - Window Title:**
-- Displays saved session name or "Window N"
-- Editable when saved
+- Displays "Window N" based on window order
 
 **Right - Close Button:**
 - X icon
@@ -86,20 +80,15 @@ A comprehensive window and tab management interface activated by long-press righ
 
 **Left - Create Button:**
 - Plus icon
-- Opens menu: New window, New incognito, New saved session
+- Opens menu: New window, New incognito
 
 **Center - Window Dots:**
 - One dot per open window
 - Active window: Different color or glow
-- Saved windows: Unique color indicator
 - Click to switch context to that window
 
 **Stats Display:**
-- Between dots and expand: "(N windows, M tabs)"
-
-**Right - Expand Button:**
-- Expand/fullscreen icon
-- Opens expanded view (see [Window Merge & Move](./feature_window_merge_move.md))
+- Between dots and end: "(N windows, M tabs)"
 
 ---
 
@@ -119,8 +108,7 @@ User long-presses right-click
     │ User can:           │
     │ • Click footer dot  │
     │ • Click tab favicon │
-    │ • Click Save button │
-    │ • Click Expand      │
+    │ • Click Create      │
     │ • Release to dismiss│
     └─────────────────────┘
               │
@@ -140,7 +128,6 @@ User long-presses right-click
 **Local State:**
 - `overviewIsOpen`: Boolean visibility
 - `selectedWindowId`: Currently displayed window in main content
-- `isExpanded`: Expanded view mode
 
 **Global Store:**
 - `windows`: All open windows (for dots and switching)
@@ -156,12 +143,6 @@ User long-presses right-click
 - Shows active window tabs only
 - Footer with dots and stats
 
-**Expanded:**
-- Full-width overlay or larger modal
-- Shows all windows side-by-side or grid
-- Drag-and-drop between windows enabled
-- See [Window Merge & Move](./feature_window_merge_move.md)
-
 ---
 
 ### Code References
@@ -176,9 +157,7 @@ User long-presses right-click
 
 ### Related Features
 
-- [Window Save & Session Management](./feature_window_save_sessions.md) - Save button functionality
-- [Window Merge & Move](./feature_window_merge_move.md) - Expanded view functionality
-- [Saved Session Browser](./feature_saved_session_browser.md) - Horizontal swipe reveals sessions
+- [New Window Creation](./feature_new_window_creation.md) - Create button functionality
 
 ---
 

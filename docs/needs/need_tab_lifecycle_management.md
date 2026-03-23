@@ -17,6 +17,10 @@ When I'm managing my browsing session, I want to **perform common actions on tab
 
 3. **Tertiary JTBD**: When a tab is stuck or outdated, I want to reload it quickly, so I can continue working without hunting for the reload button.
 
+4. **Quaternary JTBD**: When my tabs are in the wrong order, I want to reorder them with simple gestures, so I can organize my workspace without drag-and-drop precision.
+
+5. **Quinary JTBD**: When I need to perform a less common tab action, I want a context menu with all available options, so I can access advanced features without leaving the gesture interface.
+
 ---
 
 ### Current Pain Points (Without Solution)
@@ -26,6 +30,8 @@ When I'm managing my browsing session, I want to **perform common actions on tab
 3. **Reload Friction**: Must target small reload button in address bar
 4. **Move Friction**: Drag-and-drop is imprecise, especially between windows
 5. **No Quick Share**: Copying URL requires clicking address bar, selecting all, copying
+6. **Reorder Friction**: Drag-and-drop requires precise mouse control and visible drop targets
+7. **Hidden Actions**: Advanced actions (pin, mute, duplicate) buried in browser menus
 
 ---
 
@@ -37,6 +43,8 @@ Common tab actions available instantly from gesture interface:
 - Copy URL (share)
 - Save to current session or bookmark folder
 - Move to another window or saved session
+- Reorder tabs with scroll gestures
+- Access full context menu for advanced actions
 
 Each action should be one or two gestures maximum.
 
@@ -49,6 +57,8 @@ Each action should be one or two gestures maximum.
 3. Share (copy URL): Single click/tap
 4. Save: Single click, intelligent defaults for location
 5. Move: Single gesture + selection
+6. Reorder: Scroll gesture within tab bar
+7. Context menu: Right-click or long-press on any tab
 
 ---
 
@@ -56,12 +66,14 @@ Each action should be one or two gestures maximum.
 
 - [Feature: Quick Tab Actions](../features/feature_quick_tab_actions.md)
 - [Feature: Tab Close with Undo](../features/feature_tab_close_undo.md)
-- [Feature: Window Merge & Move](../features/feature_window_merge_move.md)
+- [Feature: Tab Context Menu](../features/feature_tab_context_menu.md)
+- [Feature: Tab Reorder with Scroll](../features/feature_tab_reorder_scroll.md)
+- [Feature: Move to New Window](../features/feature_move_to_new_window.md)
 
 ---
 
 ### Notes
 
-Currently implemented: Share (copy URL), Reload  
-Partially implemented: Save (needs session integration)  
-Planned: Close with undo, Move to window/session
+Currently implemented: Share (copy URL), Reload, Move to window
+Partially implemented: Save (needs session integration), Move to new window
+Planned: Close with undo, Pin/Unpin, Duplicate, Mute, Tab reorder via scroll, Full context menu
