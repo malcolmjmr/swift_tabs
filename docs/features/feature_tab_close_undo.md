@@ -2,32 +2,60 @@
 
 **Status:** Planned  
 **Priority:** Medium  
-**Addresses Need:** Quick Recovery
+**Addresses Needs:** Quick Recovery (Need 5), Tab Management (Need 3)
 
 ---
 
 ### Description
 
-Allow users to close tabs via a quick gesture while providing a temporary undo option. This safety net prevents accidental data loss while maintaining gesture efficiency.
+Any tab close action (Delete key in navigation mode, Close from Tab Menu, or Close Variants) provides a temporary undo option. This safety net prevents accidental data loss while maintaining efficient workflows.
+
+**Note:** This is not a separate close gesture — it's an undo system that applies to all close actions.
 
 ---
 
-### Trigger
+### When Undo Appears
 
-**Gesture:** Vertical swipe left while in navigation mode
+Undo is available after:
+- **Delete/Backspace key** in navigation mode (closes selected tab)
+- **Close** action from Tab Menu (basic action)
+- **Close Others** or **Close to the Right** from Tab Menu submenu
 
-**Detection:**
-1. User holds right-click (in navigation mode)
-2. User moves mouse left significantly (50+ px)
-3. System detects horizontal movement while right-click held
-4. Movement direction = close action
+Undo does NOT appear when:
+- Tab closes externally (user closes via Chrome UI)
+- Tab crashes or is discarded by Chrome
+- Window closes (handled separately)
+
+---
+
+### Undo UI
+
+**Appearance:**
+- Small pill-shaped button
+- Position: Bottom center of Active Tab Info or Tab Menu
+- Text: "↶ Undo close" or "Undo: [Tab Title]"
+- Optional: Show closed tab's favicon + truncated title
+
+**Timing:**
+- Appears: Immediately after close
+- Persists: 5 seconds
+- Fades: Smooth fade out at 4.5s, gone at 5s
+- Reset: Clicking Undo cancels timer; another close resets timer
+
+**Dismissal:**
+- Click Undo: Restores tab
+- Timeout: Undo option expires
+- Another action: Dismisses early (except another close, which shows new undo)
 
 ---
 
 ### Flow
 
 ```
-User swipes left while holding right-click
+User in navigation mode
+              │
+              ▼
+    Press Delete/Backspace
               │
               ▼
     ┌─────────────────────┐
@@ -38,8 +66,8 @@ User swipes left while holding right-click
               ▼
     ┌─────────────────────┐
     │  Undo button appears│
-    │  (bottom of modal)  │
-    │  "Undo close"       │
+    │  "↶ Undo: GitHub"   │
+    │  (5s timeout)       │
     └─────────────────────┘
               │
               ├──────────────┐
@@ -53,50 +81,129 @@ User swipes left while holding right-click
               ▼              ▼
     ┌─────────────┐  ┌─────────────┐
     │ Tab restored│  │ Undo removed│
-    │ (same pos)  │  │ Button gone │
+    │ (same pos)  │  │ Gone        │
     └─────────────┘  └─────────────┘
 ```
 
 ---
 
-### Undo UI
+### Multiple Closes
 
-**Appearance:**
-- Small pill-shaped button
-- Position: Bottom center of modal or floating near cursor
-- Text: "Undo" or "↶ Undo close"
-- Optional: Show closed tab's favicon + truncated title
+**Behavior:**
+- Each close adds to the "undo stack" (up to 5 tabs)
+- Undo button shows most recent: "↶ Undo: [Last Tab Title] (+2 more)"
+- Clicking undo restores most recent tab first
+- Subsequent clicks restore earlier tabs
 
-**Timing:**
-- Appears: Immediately after close
-- Persists: 5 seconds
-- Fades: Smooth fade out at 4.5s, gone at 5s
-- Reset: Clicking Undo cancels timer
-
-**Dismissal:**
-- Click Undo: Restores tab
-- Timeout: Undo option expires
-- Other action: Dismisses early
+**Visual:**
+```
+Closed 3 tabs rapidly:
+┌─────────────────────────────┐
+│  ↶ Undo: GitHub (+2 more)   │
+│         4s remaining        │
+└─────────────────────────────┘
+```
 
 ---
 
-### Technical Details
+### Technical Implementation
 
-**Close Implementation:**
-- Uses: `chrome.tabs.remove(tabId)`
-- Store method: `tabStore.closeTab(tabId)`
-
-**Undo Implementation:**
-- Store closed tab data: URL, title, favicon, index, windowId
-- Restore via: `chrome.tabs.create({ url, index, windowId })`
-- Ideally restore history via: `chrome.sessions` API (if available)
-
-**State Management:**
+**Close Tracking:**
 ```javascript
-// Local state in component
-let lastClosedTab = null;
+// In tabStore or App.svelte
+let closedTabsStack = []; // Array of closed tab data
 let undoTimeout = null;
-let showUndoButton = false;
+const UNDO_TIMEOUT_MS = 5000;
+const MAX_UNDO_STACK = 5;
+
+function onTabClosed(tabId) {
+    // Get tab data before it's gone
+    const tabData = {
+        id: tabId,
+        url: tab.url,
+        title: tab.title,
+        favicon: tab.favIconUrl,
+        index: tab.index,
+        windowId: tab.windowId,
+        timestamp: Date.now()
+    };
+    
+    // Add to stack
+    closedTabsStack.unshift(tabData);
+    
+    // Limit stack size
+    if (closedTabsStack.length > MAX_UNDO_STACK) {
+        closedTabsStack.pop();
+    }
+    
+    // Show undo UI
+    showUndoButton = true;
+    resetUndoTimer();
+}
+```
+
+**Undo Restore:**
+```javascript
+async function undoClose() {
+    if (closedTabsStack.length === 0) return;
+    
+    const tabData = closedTabsStack.shift(); // Get most recent
+    
+    // Restore tab
+    const restoredTab = await chrome.tabs.create({
+        url: tabData.url,
+        index: tabData.index,
+        windowId: tabData.windowId,
+        active: false
+    });
+    
+    // Optionally restore history via chrome.sessions
+    await restoreSessionHistory(tabData.id, restoredTab.id);
+    
+    // Update UI
+    if (closedTabsStack.length === 0) {
+        showUndoButton = false;
+        clearUndoTimer();
+    } else {
+        resetUndoTimer(); // Reset for next undo
+    }
+}
+```
+
+**Timer Management:**
+```javascript
+function resetUndoTimer() {
+    if (undoTimeout) clearTimeout(undoTimeout);
+    
+    undoTimeout = setTimeout(() => {
+        closedTabsStack = []; // Clear stack
+        showUndoButton = false;
+    }, UNDO_TIMEOUT_MS);
+}
+```
+
+---
+
+### Chrome Sessions API (Optional Enhancement)
+
+For full history restore:
+```javascript
+async function restoreSessionHistory(oldTabId, newTabId) {
+    try {
+        // Query recently closed tabs
+        const sessions = await chrome.sessions.getRecentlyClosed();
+        const session = sessions.find(s => 
+            s.tab && s.tab.tabId === oldTabId
+        );
+        
+        if (session) {
+            // Restore session to new tab
+            await chrome.sessions.restore(session.sessionId);
+        }
+    } catch (e) {
+        console.log('Could not restore session history');
+    }
+}
 ```
 
 ---
@@ -105,34 +212,41 @@ let showUndoButton = false;
 
 | Scenario | Behavior |
 |----------|----------|
-| Close last tab | Handle window closure gracefully |
-| Close pinned tab | Extra confirmation or different gesture |
-| Tab closes externally | Don't show undo (not our action) |
-| Multiple rapid closes | Show single undo for most recent, or stack |
-| Undo after navigation | Still works if window/tab context preserved |
-| Tab can't restore (private) | Show error or skip undo |
+| **Close last tab** | Window closes; undo restores tab AND window |
+| **Close pinned tab** | Pinned tabs require explicit unpin before close in Chrome; if closed, restore respects pinned state |
+| **Tab closes externally** | No undo offered (wasn't our action) |
+| **Multiple rapid closes** | Stack up to 5; undo restores LIFO |
+| **Undo after navigation** | Works if window still exists; if window closed, creates new window |
+| **Private/Incognito** | Can't restore private tabs; show "Can't undo private tab" message |
+| **Tab URL changed before close** | Undo restores to last known URL |
+| **Undo timeout expires** | Clear stack; user loses ability to restore those tabs |
 
 ---
 
-### Gesture Alternatives
+### Code References
 
-If swipe detection proves unreliable, consider:
-- **Button:** Small X button on active tab display
-- **Key combo:** Right-click + key while holding
-- **Menu option:** "Close this tab" in actions menu
+**Implementation Locations:**
+- `src/App.svelte` — Delete key handler, undo state
+- `src/stores/tabStore.js` — `closeTab()` method, undo stack
+- `src/components/UndoButton.svelte` — Undo UI component
+- `src/services/chromeApi.js` — `createTab()`, optional session restore
 
----
-
-### Code References (Planned)
-
-- Gesture detection: `App.svelte` (extend existing handlers)
-- Undo UI: `Toolbar.svelte` or `QuickActions.svelte`
-- Restore logic: `tabStore` new method
+**Integration Points:**
+- `feature_tab_context_menu.md` — Close action triggers undo
+- `need_quick_recovery.md` — Undo satisfies Quick Recovery need
 
 ---
 
-### Dependencies
+### Implementation Checklist
 
-- Chrome Tabs API (remove, create)
-- Chrome Sessions API (optional, for history restore)
-- Timer management in component state
+- [ ] Add `closedTabsStack` to track recently closed tabs
+- [ ] Modify `closeTab()` to save tab data before closing
+- [ ] Create UndoButton.svelte component
+- [ ] Implement `undoClose()` restore function
+- [ ] Add 5-second timeout with fade animation
+- [ ] Handle multiple closes (stack up to 5)
+- [ ] Integrate with Delete key in navigation mode
+- [ ] Integrate with Tab Menu Close action
+- [ ] Handle edge cases: last tab, pinned, private
+- [ ] Optional: Chrome Sessions API for history restore
+- [ ] Test rapid close/undo sequences

@@ -2,7 +2,7 @@
 
 **Status:** Implemented  
 **Priority:** Medium  
-**Addresses Need:** Window Management
+**Addresses Need:** Window and Group Management
 
 ---
 
@@ -14,13 +14,17 @@ Provide quick access to create new browser windows directly from the overview wi
 
 ### Trigger
 
-**From Overview Widget Footer:**
-- Click "+" (Create) button on left side of footer
+**From Windows Overview Footer:**
+- Click **[+] Create** button (left side of footer)
 - Opens creation menu with options
+- Footer structure: `[+] [⚙] [←]` — Create, Actions, Close
 
 **From Saved Session Browser:**
 - Available as "Create new window" option
 - Also "Create new saved session" (empty session)
+
+**Keyboard Shortcut (Future):**
+- Consider **"n"** key for "new window" direct shortcut
 
 ---
 
@@ -112,18 +116,21 @@ User clicks [+] Create button
 ### UI Flow
 
 ```
-Collapsed Overview
-┌─────────────────────────────────────────┐
-│                                         │
-│           [Window Content]            │
-│                                         │
-├─────────────────────────────────────────┤
-│ [+]  ● ● ● ●  (3 windows, 12 tabs)  [↗]│
-└─────────────────────────────────────────┘
+Windows Overview
+┌─────────────────────────────────────────────────────────────────┐
+│  Swift Tabs                    12 tabs  |  3 containers           │  ← Header
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│           [Container List Scrolls Here]                         │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│  [+]         [⚙]              [←]                               │  ← Footer
+│  create   actions menu    close/back                            │
+└─────────────────────────────────────────────────────────────────┘
    │
    │ Click [+]
    ▼
-Create Menu appears (as shown above)
+Create Menu appears (as shown below)
    │
    ├──────────────┬──────────────┐
    │              │              │
@@ -134,6 +141,25 @@ New Window    Incognito    New Session
 Window opens  Window opens   Dialog:
                            "Name this session"
                            [New Session] [Create]
+```
+
+**Create Menu:**
+```
+┌─────────────────────────┐
+│     Create New...       │
+├─────────────────────────┤
+│                         │
+│  🪟 New Window          │
+│     Normal browsing     │
+│                         │
+│  🕵️ New Incognito       │
+│     Private browsing    │
+│                         │
+│  📁 New Saved Session   │
+│     Empty session for   │
+│     later organization  │
+│                         │
+└─────────────────────────┘
 ```
 
 ---
@@ -178,7 +204,7 @@ Window opens  Window opens   Dialog:
 
 ### Related Features
 
-- [Overview Widget](./feature_overview_widget.md) - Container for this feature
+- [Windows Overview](./feature_windows_overview.md) - Container for this feature
 - [Window Save & Session Management](./feature_window_save_sessions.md) - Creates saved sessions
 
 ---

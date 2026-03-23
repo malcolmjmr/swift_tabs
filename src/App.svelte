@@ -19,8 +19,6 @@
     let omniboxQuery = "";
     let tabMenuIsOpen = false;
     let systemMenuIsOpen = false;
-    let toolbarIsOpen = false;
-    let toolbarIsInFocus = false;
 
     const TAB_SWITCHING_DISMISS_MS = 1500;
     let isInTabSwitchingMode = false;
@@ -57,9 +55,7 @@
 
     function addChromeRuntimeMessageListener() {
         chrome.runtime.onMessage.addListener((message) => {
-            if (message.type === "TOOLBAR") {
-                onToolbarMessage(message);
-            } else if (message.type === "NAVIGATION_MODE") {
+            if (message.type === "NAVIGATION_MODE") {
                 onNavigationModeMessage(message);
             } else if (message.type === "TAB_SWITCHING_MODE") {
                 onTabSwitchingModeMessage(message);
@@ -118,20 +114,6 @@
 
     let currentTab = null;
     let selectedTab = null;
-    function onToolbarMessage(message) {
-        toolbarIsOpen = message.open;
-        if (toolbarIsOpen) {
-            // set mouse cursor to crosshair
-            document.body.style.cursor = "crosshair";
-            mouseX = message.x;
-            mouseY = message.y;
-        } else {
-            document.body.style.cursor = "default";
-        }
-        if (currentTab != message.tab) {
-            currentTab = message.tab;
-        }
-    }
 
     async function onNavigationModeMessage(message) {
         isInNavigationMode = message.isInNavigationMode;
@@ -141,63 +123,35 @@
     }
 
     function handleRightClick(event) {
-        /*
-            determine if link, image or page is clicked
-            if link => queue within tab (how should i store tab data?)
-            if image => copy image url
-            if page => open toolbar
-        */
+        const textIsSelected = window.getSelection().toString().length > 0;
+        const isMetaKeyPressed = event.metaKey;
 
-        if (toolbarIsOpen) {
-            // send message to hide toolbar
+        if (textIsSelected) {
+            if (isMetaKeyPressed) {
+                console.log("queue search");
+                event.preventDefault();
+            }
             return;
-        } else {
-            const textIsSelected = window.getSelection().toString().length > 0;
-            const isMetaKeyPressed = event.metaKey;
+        }
 
-            if (textIsSelected) {
-                if (isMetaKeyPressed) {
-                    console.log("queue search");
-                    event.preventDefault();
-                }
-                return;
-            }
-
-            const link = event.target.closest("a");
-            if (link?.href) {
-                const url = link.href;
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    chromeService.createTab({ url, active: false });
-                }
-                return;
-            }
-
-            const imageClicked = event.target.tagName === "IMG";
-            if (imageClicked) {
-                if (settings.copyImageWithMetaKey == isMetaKeyPressed) {
-                    console.log("copy image");
-                    event.preventDefault();
-                }
-                return;
-            }
-
-            if (settings.openToolbarWithMetaKey == isMetaKeyPressed) {
+        const link = event.target.closest("a");
+        if (link?.href) {
+            const url = link.href;
+            if (url.startsWith("http://") || url.startsWith("https://")) {
                 event.preventDefault();
                 event.stopPropagation();
-
-                chrome.runtime.sendMessage({
-                    type: "TOOLBAR",
-                    open: true,
-                    x: event.clientX,
-                    y: event.clientY,
-                });
-
-                rightClickTimer = setTimeout(() => {
-                    console.log("long press detected");
-                }, longPressThreshold);
+                chromeService.createTab({ url, active: false });
             }
+            return;
+        }
+
+        const imageClicked = event.target.tagName === "IMG";
+        if (imageClicked) {
+            if (settings.copyImageWithMetaKey == isMetaKeyPressed) {
+                console.log("copy image");
+                event.preventDefault();
+            }
+            return;
         }
     }
 
@@ -209,19 +163,29 @@
             clearTimeout(rightClickTimer);
             console.log("right click mouse up");
         }
-        // Clear scroll-end timeout so we don't double-execute (mouseup fires for mouse, trackpad uses scroll-end)
-        if (scrollEndTimeout) {
-            clearTimeout(scrollEndTimeout);
-            scrollEndTimeout = null;
-        }
-        executeScrollEndAction();
     }
 
     function handleClick(event) {
-        chrome.runtime.sendMessage({
-            type: "TOOLBAR",
-            open: false,
-        });
+        // if user clicks elements outside of #swift-tabs-root then dismiss current mode
+        if (!event.target.closest("#swift-tabs-root")) {
+            if (isInNavigationMode) {
+                isInNavigationMode = false;
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode,
+                });
+            }
+            if (isInTabSwitchingMode) {
+                isInTabSwitchingMode = false;
+                chrome.runtime.sendMessage({
+                    type: "TAB_SWITCHING_MODE",
+                    isInTabSwitchingMode,
+                });
+            }
+            omniboxIsOpen = false;
+            tabMenuIsOpen = false;
+            systemMenuIsOpen = false;
+        }
     }
 
     async function handleKeydown(event) {
@@ -461,9 +425,10 @@
             let isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);
             if (isVerticalScroll) {
-                handleVerticalScroll(event.deltaY);
+                // handle vertical scroll for tab navigation
+                handleVerticalTabScroll(event.deltaY);
             } else {
-                handleHorizontalScroll(event.deltaX);
+                // handle horizontal scroll for window navigation
             }
             event.preventDefault();
             event.stopPropagation();
@@ -475,24 +440,9 @@
     let scrollDelta = 0;
     let scrollSelectDelta = 0;
     const SCROLL_SELECT_THRESHOLD = 33;
-    let removeTabOnMouseUp = false;
-    let moveTabOnMouseUp = false;
     let scrollEndTimeout = null;
-    const SCROLL_END_DELAY_MS = 150; // Time without wheel events to consider scroll "ended"
 
-    function executeScrollEndAction() {
-        if (removeTabOnMouseUp) {
-            console.log("remove tab");
-            //chromeService.closeTab(activeTabId);
-        } else if (moveTabOnMouseUp) {
-            console.log("move tab");
-            //chromeService.moveTab(activeTabId, targetWindowId);
-        }
-        removeTabOnMouseUp = false;
-        moveTabOnMouseUp = false;
-    }
-
-    function handleVerticalScroll(scrollUpdate) {
+    function handleVerticalTabScroll(scrollUpdate) {
         if (isInNavigationMode && currentTab) {
             const windowsList = get(windows) || [];
             const window = windowsList.find(
@@ -523,21 +473,14 @@
         }
     }
 
-    async function handleHorizontalScroll(scrollUpdate) {
-        console.log("handleHorizontalScroll", scrollUpdate);
+    async function handleHorizontalMoveTabScroll(scrollUpdate) {
+        console.log("handleHorizontalMoveTabScroll", scrollUpdate);
         const scrollThreshold = 300;
         const previousScrollDelta = scrollDelta;
         scrollDelta += scrollUpdate;
         if (Math.abs(scrollDelta) < scrollThreshold) {
             return;
         }
-
-        // Reset scroll-end timer on each wheel event
-        if (scrollEndTimeout) clearTimeout(scrollEndTimeout);
-        scrollEndTimeout = setTimeout(() => {
-            scrollEndTimeout = null;
-            executeScrollEndAction();
-        }, SCROLL_END_DELAY_MS);
 
         if (scrollDelta >= scrollThreshold) {
             chromeService.closeTab(currentTab.id);
@@ -547,10 +490,6 @@
 
         scrollDelta = 0;
     }
-
-    function handleHotCornerMouseEnter() {
-        toolbarIsOpen = true;
-    }
 </script>
 
 <svelte:window
@@ -558,12 +497,11 @@
     on:keyup|capture={handleKeyup}
     on:mousedown={handleMouseDown}
     on:mouseup={handleMouseUp}
+    on:contextmenu={handleRightClick}
+    on:click={handleClick}
 />
 
-<div class="hot-corner" on:mouseenter={handleHotCornerMouseEnter}></div>
-{#if toolbarIsOpen}
-    <Toolbar {currentTab} bind:toolbarIsInFocus />
-{:else if tabMenuIsOpen}
+{#if tabMenuIsOpen}
     <TabMenu />
 {:else if systemMenuIsOpen}
     <SystemMenu />
@@ -610,24 +548,5 @@
             "wght" 100,
             "GRAD" 0,
             "opsz" 48;
-    }
-    .toolbar-background {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-
-        z-index: 999998;
-    }
-
-    .hot-corner {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 50px;
-        height: 50px;
-
-        z-index: 999998;
     }
 </style>

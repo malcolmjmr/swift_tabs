@@ -45,9 +45,7 @@ function injectContentScript(tabId) {
 }
 
 function onRuntimeMessage(message, sender, sendResponse) {
-    if (message.type === "TOOLBAR") {
-        onToolbarMessage(message);
-    } else if (message.type === "CHROME_API") {
+    if (message.type === "CHROME_API") {
         chromeApiHandlers[message.endpoint](message.data, sender)
             .then(sendResponse)
             .catch(error => sendResponse({ error: error.message }));
@@ -62,7 +60,6 @@ function onRuntimeMessage(message, sender, sendResponse) {
 }
 
 var popupWindowId = null;
-var toolbarIsOpen = false;
 var isInNavigationMode = false;
 let scrollDelta = 0;
 async function handleTabSwitch(scrollUpdate, tabId) {
@@ -111,23 +108,6 @@ async function notifyTabOfTabSwitchingMode(tabId) {
     }
 }
 
-async function onToolbarMessage(message) {
-
-    if (message.open == toolbarIsOpen) { return; }
-
-    toolbarIsOpen = message.open;
-    let tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-        chrome.tabs.sendMessage(tab.id, {
-            type: "TOOLBAR",
-            open: toolbarIsOpen,
-            x: message.x,
-            y: message.y,
-            tab,
-        });
-    }
-
-}
 
 async function onNavigationModeMessage(message) {
     isInNavigationMode = message.isInNavigationMode;

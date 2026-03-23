@@ -2,7 +2,7 @@
 
 **Status:** Planned
 **Priority:** Medium
-**Addresses Need:** Content Discovery (Need 6)
+**Addresses Need:** Find in Page (Need 6)
 
 ---
 

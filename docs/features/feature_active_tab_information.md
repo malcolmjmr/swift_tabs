@@ -14,22 +14,16 @@ When the user performs a short right-click within the active tab, display an ove
 
 ### Trigger
 
-- **User Action:** Short right-click (press and hold briefly, < 500ms) anywhere in page content
-- **Activation:** Right-click detected, timer threshold not exceeded for long-press
+- **Activation:** Automatically appears upon **URL navigation** (switching tabs or loading a new URL).
+- **Symbol:** Includes the **symbol of the Meta key** (⌘ on Mac, ⊞ on Windows) as a hint for the Tab Menu.
 
 ---
 
-### Display Content
+### Visibility & Persistence
 
-**Active Tab (Center - Highlighted):**
-- Favicon (large)
-- Full tab title (no truncation)
-- Quick actions row (share, reload, save)
-
-**Adjacent Tabs (Above/Below - Smaller):**
-- Favicon
-- Truncated title
-- Visual indicator of relative position
+- **Auto-Hide:** Automatically hides when the user **scrolls down** on the web page.
+- **On-Demand Show:** Optionally reappears when the user **scrolls up** (providing quick context while reading).
+- **Manual Dismiss:** Click outside overlay, press Escape, or scroll down.
 
 ---
 

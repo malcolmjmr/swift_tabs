@@ -7,50 +7,48 @@
 
 ### Jobs to Be Done
 
-When I have many tabs open across a browser window, I want to **switch between them quickly** so that I can **maintain my flow state without breaking focus to hunt for tabs visually**.
+When I have many tabs and windows open, I want to **switch between them effortlessly** so that I can **maintain my flow state without breaking focus**.
 
 #### Key JTBD Statements:
 
-1. **Main JTBD**: When I'm working with multiple tabs, I want to navigate between them using muscle memory and gestures, so I don't have to look at the tab bar and precisely click small targets.
+1. **Main JTBD**: When I'm working, I want to use the Meta key and scroll wheel to flip through tabs and windows, keeping my hands in place and my eyes on the content.
 
-2. **Secondary JTBD**: When I'm deep in thought or working quickly, I want to switch tabs without taking my eyes off the content, so I can maintain my concentration.
+2. **Secondary JTBD**: When I'm at the keyboard, I want to use arrow keys to navigate my workspace without needing to remember complex shortcuts.
 
 ---
 
 ### Current Pain Points (Without Solution)
 
-1. **Visual Hunting**: User must scan tab bar to find desired tab
-2. **Precise Clicking**: Small tab targets require careful mouse positioning
-3. **Tab Bar Overflow**: Many tabs become tiny or hidden, making them hard to identify
-4. **Context Switching**: Moving eyes from content to tab bar breaks flow
+1. **Precise Clicking**: Small tab targets require careful mouse positioning.
+2. **Window Isolation**: Switching windows usually requires OS-level shortcuts (Alt+Tab/Cmd+`) which feels disconnected from tab navigation.
+3. **Chorded Shortcuts**: Default browser shortcuts are often physically awkward (Ctrl+Tab, Cmd+Option+Arrows).
 
 ---
 
 ### Desired Outcome
 
-The user can navigate through open tabs using a simple, consistent gesture (vertical scroll) that:
-- Works without looking at UI chrome
-- Provides immediate feedback (tab switches instantly)
-- Shows context (adjacent tabs visible) without requiring interaction
-- Dismisses automatically when done
+The user can navigate through the entire workspace (tabs and windows) using **Meta-Scroll** or **Arrow Keys**:
+- Vertical movement for tabs, horizontal for windows.
+- Works without moving the mouse to the chrome.
+- Provides immediate feedback.
 
 ---
 
 ### Success Metrics
 
-1. Tab switching requires minimal hand movement (right-click + scroll)
-2. No visual search required—user can navigate purely by gesture
-3. Tab content appears within 100ms of gesture completion
-4. User can switch between 5+ tabs rapidly without losing context
+1. Tab/Window switching happens instantly upon scroll or keypress.
+2. No mouse movement to tab bar required.
+3. User can navigate across windows as easily as across tabs.
 
 ---
 
 ### Related Features
 
 - [Feature: Gesture-Based Tab Navigation](../features/feature_gesture_tab_navigation.md)
+- Need: [Discoverable Keyboard Interaction](./need_discoverable_keyboard_interaction.md) (keyboard navigation path)
 
 ---
 
 ### Notes
 
-This need is the **core value proposition** of Swift Tabs. Most other features support or enhance this primary workflow.
+This need is a **core value proposition** of Swift Tabs, supported by [Immersive Experience](./need_immersive_experience.md) and [Ergonomic Input Primacy](./need_ergonomic_input_primacy.md). Navigation should prioritize scroll and keyboard so the mouse stays in the content area. Most other features support or enhance this primary workflow.

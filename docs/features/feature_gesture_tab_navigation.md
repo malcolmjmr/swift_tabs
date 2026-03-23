@@ -8,37 +8,33 @@
 
 ### Description
 
-Enable users to navigate through open tabs using vertical scroll gestures while holding right-click. This provides rapid, eyes-free tab switching with immediate visual feedback showing the selected tab and its neighbors.
+Enable users to navigate through open tabs and windows using **Meta-Scroll** gestures. Vertical scroll while holding the Meta key switches between tabs in the current window, and horizontal scroll switches between browser windows. Arrow keys provide the same functionality without requiring the Meta key.
 
 ---
 
 ### Trigger & Activation
 
-1. **Enter Navigation Mode:**
-   - User performs short right-click
-   - System enters `isInNavigationMode = true`
-   - Tab information display appears
+1. **Meta-Scroll Navigation:**
+   - **Vertical Scroll + Meta:** While holding the **Meta key** (⌘/⊞), scroll vertically to switch between tabs in the current window.
+   - **Horizontal Scroll + Meta:** While holding the **Meta key**, scroll horizontally to switch between open browser windows.
 
-2. **Navigation Gestures:**
-   - While holding right-click, user scrolls wheel up/down
-   - Each scroll tick moves selection to next/previous tab
-   - Browser immediately switches to selected tab
+2. **Keyboard Navigation:**
+   - **Arrow Keys:** Use **Up/Down** arrows to switch tabs and **Left/Right** arrows to switch windows (no modifier key required if not in a text input).
 
-3. **Exit Navigation Mode:**
-   - User releases right-click
-   - Modal dismisses after short delay (1.5s)
-   - `isInNavigationMode = false`
+3. **Immediate Feedback:**
+   - The browser immediately switches to the selected tab or window.
+   - The Active Tab Information Display or Windows Overview updates to show the new context.
 
 ---
 
-### Scroll Behavior
+### Navigation Behavior
 
-| Gesture | Action | Visual Feedback |
-|---------|--------|-----------------|
-| Scroll up | Select previous tab | Active tab moves up in display |
-| Scroll down | Select next tab | Active tab moves down in display |
-| Hold scroll | Continuous navigation | Throttled to prevent rapid jumps |
-| Release | Keep current tab | Modal fades, normal browsing resumes |
+| Input | Action | Feedback |
+|-------|--------|----------|
+| **Meta + Scroll Up/Down** | Switch Tab | Immediate switch to prev/next tab |
+| **Meta + Scroll Left/Right** | Switch Window | Immediate switch to prev/next window |
+| **Up/Down Arrow** | Switch Tab | Same as Meta-Scroll |
+| **Left/Right Arrow** | Switch Window | Same as Meta-Scroll |
 
 **Technical Details:**
 - Throttle: 100ms between scroll events to prevent accidental skips

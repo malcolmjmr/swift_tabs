@@ -2,32 +2,51 @@
 
 **Status:** Partially Implemented
 **Priority:** High
-**Addresses Needs:** Efficient Tab Navigation (Need 1), Content Discovery (Need 6)
+**Addresses Need:** Efficient Tab Navigation (Need 1), Tab Management (Need 3)
 
 ---
 
 ### Description
 
-A unified search interface that appears when typing in navigation mode. Supports searching across open tabs, URLs, and web search. Eliminates the need to visually hunt through tabs or manually type full URLs.
+A unified search interface with tabbed sections for different search scopes. Appears when typing in navigation mode. Supports searching across open tabs, tab groups, bookmarks, and history. Eliminates the need to visually hunt through tabs or manually type full URLs.
 
 ---
 
-### Current Implementation
+### Trigger
 
-The omnibox is currently implemented in `src/components/Omnibox.svelte` with basic functionality:
+- Press **"o"** while not in a text input element.
+- Type any printable character while in navigation mode (e.g., while Active Tab Info or Overview is visible).
+- Omnibox appears with the focus ready for input.
 
-**Trigger:**
-- Type any printable character while in navigation mode (press Space to enter)
-- Omnibox appears with that character as initial query
+---
 
-**Current Behavior:**
-1. User types query
-2. System detects if input is URL-like (has dots, http://, etc.)
-3. If URL: navigates to that URL in a new tab
-4. If search query: performs Google search in new tab
-5. Press Escape to close without action
+### Layout Structure
 
-**Code Reference:**
+The Omnibox is organized into three areas: Search Input, Section Tabs, and Results List.
+
+```
+┌─────────────────────────────────────────┐
+│  Search or enter URL...                 │  ← Search Input
+│  [user types "git"]                     │
+├─────────────────────────────────────────┤
+│  [Tabs] [Groups] [Bookmarks] [History]  │  ← Section Tabs (horizontal scroll)
+├─────────────────────────────────────────┤
+│  📑 github.com/my-project               │  ← Results List (vertical scroll)
+│  📑 gitlab.com/dashboard                │
+│  📑 gist.github.com/snippets            │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+---
+
+### Search Input
+
+- **Placeholder:** "Search or enter URL..."
+- **Behavior:** As user types, results in the current section are filtered
+- **URL Detection:** If input is URL-like (has dots, http://, etc.), shows "Open URL" option at bottom
+
+**URL Detection Logic (existing):**
 ```102:104:src/components/Omnibox.svelte
     function isUrlLike(str) {
         const trimmed = str.trim();
@@ -41,72 +60,153 @@ The omnibox is currently implemented in `src/components/Omnibox.svelte` with bas
 
 ---
 
-### Planned Enhancements
+### Section Tabs
 
-#### 1. Tab Search in Omnibox
+Horizontal tab bar for switching between search scopes. User navigates sections via **horizontal scroll** or click.
 
-**Behavior:**
-- As user types, show suggestions from:
-  - Open tabs (matching title or URL)
-  - Bookmarks
-  - History
-  - Web search (default)
+| Tab | Icon | Content |
+|-----|------|---------|
+| **Tabs** | 📑 | Open tabs matching query (title or URL) |
+| **Groups** | 📦 | Tab groups matching query |
+| **Bookmarks** | 🔖 | Bookmarks matching query |
+| **History** | 🕐 | Recently visited URLs matching query |
 
-**UI Flow:**
-```
-┌─────────────────────────────────────────┐
-│  Search or enter URL                    │
-│  [user types "git"]                       │
-└─────────────────────────────────────────┘
-┌─────────────────────────────────────────┐
-│  📑 Open Tabs (2)                       │
-│  ├─ github.com/my-project              │
-│  └─ gitlab.com/dashboard                │
-│                                         │
-│  🔖 Bookmarks (1)                       │
-│  └─ Git Documentation                   │
-│                                         │
-│  🌐 Search "git" on Google              │
-│                                         │
-│  ↵ Open "github.com" in new tab         │
-└─────────────────────────────────────────┘
-```
+**Navigation:**
+- **Horizontal Scroll:** Switch between section tabs (wraps around)
+- **Click:** Directly select a tab
+- **Indicator:** Underline or highlight on active tab
 
-**Keyboard Navigation:**
-- ↑/↓ to navigate suggestions
-- Enter to activate selected (switch to tab or open URL)
-- Escape to close
-- Tab to complete with first suggestion
-
-**Technical Approach:**
-- Query all tabs from `tabStore` and filter by title/URL match
-- Fuzzy search for better matching (e.g., using `fuse.js` or simple contains)
-- Prioritize: open tabs > bookmarks > history > search
+**Default Section:** Tabs
+- Omnibox opens with **Tabs** section active by default
+- User sees open tab matches immediately
 
 ---
 
-#### 2. Prefix-Based Search Modes
+### Results List
 
-**Syntax:**
-- `tab: github` - Search only open tabs
-- `bm: recipes` - Search only bookmarks
-- `hist: meeting` - Search history
-- Default (no prefix): Search everything
+Each section displays a vertically scrollable list of matching items.
+
+**Navigation:**
+- **Vertical Scroll:** Navigate up/down through results
+- **Enter:** Activate selected result (switch to tab, open bookmark, etc.)
+- **Escape:** Close omnibox
+
+**Result Item Structure:**
+```
+┌─────────────────────────────────────────┐
+│  📑 favicon  Title of the Page          │
+│     example.com/path                  │
+└─────────────────────────────────────────┘
+```
+
+**Visual Elements:**
+- **Icon:** Type indicator (📑 tab, 📦 group, 🔖 bookmark, 🕐 history)
+- **Title:** Page or group name
+- **Subtitle:** URL or additional context
 
 ---
 
-#### 3. Direct Tab Activation
+### Section Behaviors
 
-**Behavior:**
-- When an open tab is selected from suggestions
-- Instead of opening new tab, switch to existing tab
-- Close navigation mode after activation
+#### Tabs Section
+- Searches open tabs by **title** and **URL**
+- **Selecting a tab:** Switches to that tab (does not open new tab)
+- **Empty state:** "No open tabs match 'query'"
 
-**Technical:**
-```javascript
-await chromeService.activateTab(tabId);
-// Close omnibox and navigation mode
+#### Groups Section
+- Searches tab groups by **name**
+- **Selecting a group:** Switches to that group's window and activates the group's active tab
+- **Empty state:** "No tab groups match 'query'"
+
+#### Bookmarks Section
+- Searches bookmarks by **title** and **URL**
+- **Selecting a bookmark:** Opens in new tab
+- **Empty state:** "No bookmarks match 'query'"
+
+#### History Section
+- Searches history by **title** and **URL**
+- **Selecting a history item:** Opens in new tab
+- **Empty state:** "No history matches 'query'"
+
+---
+
+### Interaction Flow
+
+**Opening and Searching:**
 ```
+User presses "o" or types in navigation mode
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Omnibox appears     │
+    │ Tabs section active │
+    │ (default)           │
+    └─────────────────────┘
+              │
+              ▼
+    User types "git"
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Tabs section shows  │
+    │ matching open tabs  │
+    │                     │
+    │ 📑 github.com/...  │
+    │ 📑 gitlab.com/...  │
+    │ 📑 gist.github...  │
+    └─────────────────────┘
+```
+
+**Switching Sections:**
+```
+User types "doc"
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Tabs: few results   │
+    └─────────────────────┘
+              │
+    Horizontal Scroll Right
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Bookmarks section   │
+    │ now active          │
+    │                     │
+    │ 🔖 Documentation    │
+    │ 🔖 Docker Guide     │
+    └─────────────────────┘
+```
+
+**Activating Result:**
+```
+User vertical scrolls to select
+              │
+              ▼
+    Select 📑 github.com/my-project
+              │
+              ▼
+    Press Enter
+              │
+              ▼
+    ┌─────────────────────┐
+    │ Switch to that tab  │
+    │ Close omnibox       │
+    │ Exit nav mode       │
+    └─────────────────────┘
+```
+
+---
+
+### Keyboard Navigation
+
+| Key | Action |
+|-----|--------|
+| ↑/↓ | Navigate up/down in results list (same as vertical scroll) |
+| ←/→ | Navigate left/right between section tabs (same as horizontal scroll) |
+| Enter | Activate selected result |
+| Escape | Close omnibox |
+| Tab | (Optional) Complete with first suggestion or cycle sections |
 
 ---
 
@@ -114,20 +214,41 @@ await chromeService.activateTab(tabId);
 
 **Input:**
 - `query`: Current input string
-- `suggestions`: Filtered list of matches
+- `selectedSection`: Active tab index (0=Tabs, 1=Groups, 2=Bookmarks, 3=History)
+- `selectedResultIndex`: Currently selected result in the list
+- `filteredResults`: Matching items for current section
 
 **Actions:**
-- `filterTabs(query)`: Search through all tabs
+- `filterTabs(query)`: Search through open tabs
+- `filterGroups(query)`: Search through tab groups
+- `filterBookmarks(query)`: Search through bookmarks
+- `filterHistory(query)`: Search through history
 - `activateTab(tabId)`: Switch to existing tab
+- `activateGroup(groupId)`: Switch to group
 - `openUrl(url)`: Create new tab with URL
-- `performSearch(query)`: Open Google search
+
+---
+
+### Technical Approach
+
+**Search Implementation:**
+- Query all tabs from `tabStore` and filter by title/URL match
+- Query tab groups and filter by name
+- Access Chrome bookmarks API for bookmark search
+- Access Chrome history API for history search
+- Simple `includes()` matching for MVP, consider fuzzy search (fuse.js) for future
+
+**Result Prioritization within Sections:**
+- Match in title > match in URL
+- Recently active > older
+- Alphabetical as tiebreaker
 
 ---
 
 ### Code References
 
 - **Component:** `src/components/Omnibox.svelte`
-- **Integration:** `src/App.svelte` (lines 18-20, 253-262, 572-579)
+- **Integration:** `src/App.svelte` (trigger handling)
 - **Store:** `src/stores/tabStore.js`
 - **Service:** `src/services/chromeApi.js`
 
@@ -136,10 +257,9 @@ await chromeService.activateTab(tabId);
 ### Future Considerations
 
 - **Fuzzy Search Library:** Consider `fuse.js` for typo-tolerant matching
-- **Bookmark Integration:** Access Chrome bookmarks API for suggestions
-- **History Integration:** Query browser history for recently visited URLs
+- **Combined Results View:** Future option for "All" section showing top matches from all sources
+- **Recent Searches:** Show recent queries when omnibox opens empty
 - **Machine Learning:** Learn frequently accessed tabs and prioritize
-- **Recent Queries:** Show recent searches when omnibox opens empty
 
 ---
 
@@ -149,9 +269,12 @@ await chromeService.activateTab(tabId);
 - [x] URL detection and navigation
 - [x] Search query handling
 - [x] Escape to close
-- [ ] Tab search suggestions
-- [ ] Bookmark search
-- [ ] History search
-- [ ] Keyboard navigation (arrows, enter)
-- [ ] Direct tab activation
-- [ ] Prefix-based search modes
+- [x] Trigger by "o" key
+- [ ] Tabbed section navigation (horizontal scroll)
+- [ ] Tabs section (search open tabs)
+- [ ] Groups section (search tab groups)
+- [ ] Bookmarks section
+- [ ] History section
+- [ ] Vertical scroll for results
+- [ ] Direct tab activation (switch vs new tab)
+- [ ] Direct group activation
