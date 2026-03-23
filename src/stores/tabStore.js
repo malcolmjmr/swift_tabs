@@ -35,6 +35,8 @@ const createTabStore = () => {
                     if (message.type === 'TAB_UPDATED') {
                         console.log('tab updated', message);
                         store.refreshState();
+                    } else if (message.type === 'TABS_DATA_CHANGED') {
+                        store.refreshState();
                     }
                 });
             } catch (error) {

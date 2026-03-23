@@ -12,8 +12,11 @@
     } from "./stores/tabStore";
     import { chromeService } from "./services/chromeApi";
     import TabsView from "./components/tabs_view/TabsView.svelte";
+    import Omnibox from "./components/Omnibox.svelte";
 
     let isInNavigationMode = false;
+    let omniboxIsOpen = false;
+    let omniboxQuery = "";
     let tabMenuIsOpen = false;
     let systemMenuIsOpen = false;
     let toolbarIsOpen = false;
@@ -60,8 +63,20 @@
                 onNavigationModeMessage(message);
             } else if (message.type === "TAB_SWITCHING_MODE") {
                 onTabSwitchingModeMessage(message);
+            } else if (message.type === "TABS_DATA_CHANGED") {
+                onTabsDataChangedMessage();
             }
         });
+    }
+
+    async function onTabsDataChangedMessage() {
+        const tab = await chromeService.getCurrentTab();
+        if (tab) {
+            currentTab = tab;
+            if (selectedTab?.id === tab.id) {
+                selectedTab = tab;
+            }
+        }
     }
 
     function enterTabSwitchingMode() {
@@ -118,8 +133,11 @@
         }
     }
 
-    function onNavigationModeMessage(message) {
+    async function onNavigationModeMessage(message) {
         isInNavigationMode = message.isInNavigationMode;
+        if (isInNavigationMode) {
+            await tabStore.refreshState();
+        }
     }
 
     function handleRightClick(event) {
@@ -186,11 +204,6 @@
     function handleMouseDown(event) {}
 
     function handleMouseUp(event) {
-        // if spacebar ignore default behavior
-        if (event.key === " ") {
-            event.preventDefault();
-            event.stopPropagation();
-        }
         if (event.button === 2) {
             // Right-click button
             clearTimeout(rightClickTimer);
@@ -219,14 +232,51 @@
         let isNotContentEditable = !document.activeElement.isContentEditable;
 
         if (isNotInputField && isNotContentEditable) {
-            if (event.key === " ") {
+            const isPrintableChar =
+                event.key.length === 1 &&
+                !event.ctrlKey &&
+                !event.altKey &&
+                !event.metaKey &&
+                ![
+                    " ",
+                    "Enter",
+                    "Escape",
+                    "ArrowUp",
+                    "ArrowDown",
+                    "ArrowLeft",
+                    "ArrowRight",
+                    "Delete",
+                    "Backspace",
+                    "Tab",
+                ].includes(event.key);
+
+            if (
+                isPrintableChar &&
+                isInNavigationMode &&
+                !omniboxIsOpen &&
+                window.getSelection().toString().length === 0
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+                omniboxQuery = event.key;
+                omniboxIsOpen = true;
+            } else if (event.key === " ") {
                 event.preventDefault();
                 event.stopPropagation();
                 event.stopImmediatePropagation();
-                chrome.runtime.sendMessage({
-                    type: "NAVIGATION_MODE",
-                    isInNavigationMode: !isInNavigationMode,
-                });
+                if (isInNavigationMode && selectedTab) {
+                    chromeService.activateTab(selectedTab.id);
+                    isInNavigationMode = false;
+                    chrome.runtime.sendMessage({
+                        type: "NAVIGATION_MODE",
+                        isInNavigationMode,
+                    });
+                } else {
+                    chrome.runtime.sendMessage({
+                        type: "NAVIGATION_MODE",
+                        isInNavigationMode: !isInNavigationMode,
+                    });
+                }
             } else if (event.key === "Escape" && isInTabSwitchingMode) {
                 event.preventDefault();
                 if (tabSwitchingDismissTimeout) {
@@ -234,6 +284,49 @@
                     tabSwitchingDismissTimeout = null;
                 }
                 isInTabSwitchingMode = false;
+            } else if (
+                (event.key === "Delete" || event.key === "Backspace") &&
+                isInNavigationMode &&
+                selectedTab
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+                const windowsList = [...get(windows)]
+                    .filter((w) => w.tabs.length > 0)
+                    .sort((a, b) => a.id - b.id);
+                const window = windowsList.find(
+                    (w) => w.id === selectedTab.windowId,
+                );
+                if (!window?.tabs?.length) return;
+                const tabs = [...window.tabs].sort((a, b) => a.index - b.index);
+                const currentIndex = tabs.findIndex(
+                    (t) => t.id === selectedTab.id,
+                );
+                await tabStore.closeTab(selectedTab.id);
+                await tabStore.refreshState();
+                selectedTab = currentTab;
+                // const updatedWindows = get(windows);
+                // const updatedWindow = updatedWindows.find(
+                //     (w) => w.id === window.id,
+                // );
+                // const updatedTabs = updatedWindow?.tabs
+                //     ? [...updatedWindow.tabs].sort((a, b) => a.index - b.index)
+                //     : [];
+                // if (updatedTabs.length > 0) {
+                //     const nextIndex = Math.min(
+                //         currentIndex,
+                //         updatedTabs.length - 1,
+                //     );
+                //     selectedTab = updatedTabs[nextIndex];
+                // } else {
+                //     selectedTab = null;
+                // }
+            } else if (
+                event.key === "Enter" &&
+                isInNavigationMode &&
+                selectedTab
+            ) {
+                moveSelectedTabToNextWindow(event);
             } else if (
                 ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
                     event.key,
@@ -297,6 +390,16 @@
                     chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
                 }
                 resetTabSwitchingDismissTimeout();
+            } else if (event.key === ",") {
+                // (<) used to navigate to previous history item
+                event.preventDefault();
+                event.stopPropagation();
+                history.back();
+            } else if (event.key === ".") {
+                // (>) used to navigate to next history item
+                event.preventDefault();
+                event.stopPropagation();
+                history.forward();
             } else {
                 let textSelection = window.getSelection().toString();
                 if (textSelection.length > 0) {
@@ -313,6 +416,38 @@
         }
     }
 
+    async function moveSelectedTabToNextWindow(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const windowsList = [...get(windows)]
+            .filter((w) => w.tabs.length > 0)
+            .sort((a, b) => a.id - b.id);
+        const currentWindowId = selectedTab.windowId;
+        const currentWindowIndex = windowsList.findIndex(
+            (w) => w.id === currentWindowId,
+        );
+        if (currentWindowIndex < 0 || windowsList.length < 2) return;
+        const currentWindow = windowsList[currentWindowIndex];
+        const tabs = [...currentWindow.tabs].sort((a, b) => a.index - b.index);
+        const currentTabIndex = tabs.findIndex((t) => t.id === selectedTab.id);
+        const nextWindowIndex = (currentWindowIndex + 1) % windowsList.length;
+        const targetWindowId = windowsList[nextWindowIndex].id;
+        await tabStore.moveTab(selectedTab.id, targetWindowId);
+        const updatedWindows = get(windows);
+        const updatedWindow = updatedWindows.find(
+            (w) => w.id === currentWindowId,
+        );
+        const updatedTabs = updatedWindow?.tabs
+            ? [...updatedWindow.tabs].sort((a, b) => a.index - b.index)
+            : [];
+        if (updatedTabs.length > 0) {
+            const nextIndex = Math.min(currentTabIndex, updatedTabs.length - 1);
+            selectedTab = updatedTabs[nextIndex];
+        } else {
+            selectedTab = null;
+        }
+    }
+
     function handleKeyup(event) {
         if (event.key === " ") {
             event.preventDefault();
@@ -326,10 +461,7 @@
             let isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);
             if (isVerticalScroll) {
-                chrome.runtime.sendMessage({
-                    type: "SCROLL",
-                    scrollDelta: event.deltaY,
-                });
+                handleVerticalScroll(event.deltaY);
             } else {
                 handleHorizontalScroll(event.deltaX);
             }
@@ -341,6 +473,8 @@
     }
 
     let scrollDelta = 0;
+    let scrollSelectDelta = 0;
+    const SCROLL_SELECT_THRESHOLD = 33;
     let removeTabOnMouseUp = false;
     let moveTabOnMouseUp = false;
     let scrollEndTimeout = null;
@@ -356,6 +490,37 @@
         }
         removeTabOnMouseUp = false;
         moveTabOnMouseUp = false;
+    }
+
+    function handleVerticalScroll(scrollUpdate) {
+        if (isInNavigationMode && currentTab) {
+            const windowsList = get(windows) || [];
+            const window = windowsList.find(
+                (w) => w.id === currentTab.windowId,
+            );
+            if (!window?.tabs?.length) return;
+
+            const tabs = [...window.tabs].sort((a, b) => a.index - b.index);
+            const refTab = selectedTab || currentTab;
+            const currentIndex = tabs.findIndex((t) => t.id === refTab.id);
+            const idx = currentIndex >= 0 ? currentIndex : 0;
+
+            scrollSelectDelta += scrollUpdate;
+            if (Math.abs(scrollSelectDelta) >= SCROLL_SELECT_THRESHOLD) {
+                const direction = scrollSelectDelta > 0 ? -1 : 1;
+                scrollSelectDelta = 0;
+                const nextIndex = Math.max(
+                    0,
+                    Math.min(tabs.length - 1, idx + direction),
+                );
+                selectedTab = tabs[nextIndex];
+            }
+        } else {
+            chrome.runtime.sendMessage({
+                type: "SCROLL",
+                scrollDelta: scrollUpdate,
+            });
+        }
     }
 
     async function handleHorizontalScroll(scrollUpdate) {
@@ -404,6 +569,15 @@
     <SystemMenu />
 {:else if isInNavigationMode}
     <TabsView windows={$windows} bind:currentTab bind:selectedTab />
+    {#if omniboxIsOpen}
+        <Omnibox
+            bind:query={omniboxQuery}
+            on:close={() => {
+                omniboxIsOpen = false;
+                omniboxQuery = "";
+            }}
+        />
+    {/if}
 {:else if isInTabSwitchingMode && $currentWindowTabs.length > 0}
     <TabSwitchingModal
         currentWindowTabs={$currentWindowTabs}

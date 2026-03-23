@@ -13,10 +13,12 @@
     let window;
     let tabs = [];
     onMount(() => {
-        if (windows) {
+        if (windows && currentTab) {
             window = windows.find((w) => w.id === currentTab.windowId);
-            window.tabs.sort((a, b) => a.index - b.index);
-            tabs = window.tabs;
+            if (window) {
+                window.tabs.sort((a, b) => a.index - b.index);
+                tabs = window.tabs;
+            }
         }
     });
 </script>

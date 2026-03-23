@@ -140,6 +140,21 @@ async function onNavigationModeMessage(message) {
     }
 }
 
+async function broadcastTabsDataChanged() {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+        if (tab.id && tab.url && /^https?:\/\//.test(tab.url)) {
+            try {
+                await chrome.tabs.sendMessage(tab.id, {
+                    type: "TABS_DATA_CHANGED",
+                });
+            } catch (e) {
+                // Content script may not be loaded (e.g. chrome:// pages)
+            }
+        }
+    }
+}
+
 // Helper function to get tabs in a window and current tab index
 async function getTabsInWindow(windowId) {
     const tabs = await chrome.tabs.query({ windowId: windowId });
@@ -182,6 +197,7 @@ const chromeApiHandlers = {
 
     async CLOSE_TAB({ tabId }) {
         await chrome.tabs.remove(tabId);
+        broadcastTabsDataChanged();
         return { success: true };
     },
 
@@ -203,7 +219,9 @@ const chromeApiHandlers = {
     },
 
     async MOVE_TAB({ tabId, targetWindowId }) {
-        return chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 });
+        await chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 });
+        broadcastTabsDataChanged();
+        return { success: true };
     },
 
     async FOCUS_WINDOW({ windowId }) {
