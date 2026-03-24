@@ -66,5 +66,30 @@ export const chromeService = {
 
     async focusWindow(windowId) {
         return this.sendMessage('FOCUS_WINDOW', { windowId });
+    },
+
+    async muteTab(tabId) {
+        return this.sendMessage('MUTE_TAB', { tabId });
+    },
+
+    async discardTab(tabId) {
+        return this.sendMessage('DISCARD_TAB', { tabId });
+    },
+
+    async createWindowWithTab(tabId) {
+        return this.sendMessage('CREATE_WINDOW', { tabId });
+    },
+
+    async copyTabUrl(tabId) {
+        const res = await this.sendMessage('COPY_TAB_URL', { tabId });
+        return res?.url ?? null;
+    },
+
+    async closeOtherTabs(tabId) {
+        return this.sendMessage('CLOSE_OTHER_TABS', { tabId });
+    },
+
+    async closeTabsToRight(tabId) {
+        return this.sendMessage('CLOSE_TABS_TO_RIGHT', { tabId });
     }
 };

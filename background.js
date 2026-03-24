@@ -2,6 +2,7 @@
 chrome.runtime.onInstalled.addListener(onInstalled);
 chrome.runtime.onMessage.addListener(onRuntimeMessage);
 chrome.tabs.onUpdated.addListener(onTabUpdated);
+chrome.tabs.onActivated.addListener(onTabActivated);
 
 
 
@@ -25,13 +26,24 @@ async function onInstalled() {
 }
 
 function onTabUpdated(tabId, changeInfo, tab) {
-    //console.log('Tab updated', tabId, changeInfo, tab);
     chrome.runtime.sendMessage({
         type: 'TAB_UPDATED',
         tabId: tabId,
         changeInfo: changeInfo,
         tab: tab,
     });
+}
+
+async function onTabActivated(activeInfo) {
+    try {
+        await chrome.tabs.sendMessage(activeInfo.tabId, {
+            type: 'TAB_ACTIVATED',
+            tabId: activeInfo.tabId,
+            windowId: activeInfo.windowId,
+        });
+    } catch (e) {
+        // Content script may not be loaded (e.g. chrome://, new tab)
+    }
 }
 
 
@@ -206,6 +218,58 @@ const chromeApiHandlers = {
 
     async FOCUS_WINDOW({ windowId }) {
         await chrome.windows.update(windowId, { focused: true });
+        return { success: true };
+    },
+
+    async MUTE_TAB({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        await chrome.tabs.update(tabId, { muted: !tab.mutedInfo?.muted });
+        return { success: true };
+    },
+
+    async DISCARD_TAB({ tabId }) {
+        await chrome.tabs.discard(tabId);
+        return { success: true };
+    },
+
+    async CREATE_WINDOW({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        const newWindow = await chrome.windows.create({
+            tabId: tab.id,
+            focused: true,
+        });
+        broadcastTabsDataChanged();
+        return newWindow;
+    },
+
+    async COPY_TAB_URL({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        return { url: tab.url };
+    },
+
+    async CLOSE_OTHER_TABS({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+        const toClose = tabs.filter((t) => t.id !== tabId);
+        for (const t of toClose) {
+            await chrome.tabs.remove(t.id);
+        }
+        broadcastTabsDataChanged();
+        return { success: true };
+    },
+
+    async CLOSE_TABS_TO_RIGHT({ tabId }) {
+        const tab = await chrome.tabs.get(tabId);
+        const tabs = await chrome.tabs.query({
+            windowId: tab.windowId,
+        });
+        const sorted = tabs.sort((a, b) => a.index - b.index);
+        const idx = sorted.findIndex((t) => t.id === tabId);
+        const toClose = sorted.slice(idx + 1);
+        for (const t of toClose) {
+            await chrome.tabs.remove(t.id);
+        }
+        broadcastTabsDataChanged();
         return { success: true };
     }
 };

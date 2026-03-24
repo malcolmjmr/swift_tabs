@@ -1,113 +1,192 @@
 <script>
-    import { onMount } from "svelte";
+    import { createEventDispatcher } from "svelte";
 
-    export let tabs = []; // Array of tab objects, each with isActive: boolean
-    export let x = 0;
-    export let y = 0;
+    export let tab = null;
+    export let mode = "auto"; // 'auto' | 'navigation'
 
-    // Function to get the correct z-index for the active tab to be on top
-    function getZIndex(tab) {
-        return tab.isActive ? 10 : 1;
+    const dispatch = createEventDispatcher();
+
+    let faviconFailed = false;
+    let lastTabId = null;
+    $: if (tab?.id !== lastTabId) {
+        lastTabId = tab?.id;
+        faviconFailed = false;
     }
 
-    onMount(() => {});
+    const metaKeySymbol =
+        typeof navigator !== "undefined" && navigator.platform?.includes("Mac")
+            ? "⌘"
+            : "⊞";
+
+    $: displayTitle = tab?.title || "Untitled";
+    $: displayHostname = tab?.url
+        ? (() => {
+              try {
+                  return new URL(tab.url).hostname;
+              } catch {
+                  return tab.url;
+              }
+          })()
+        : "";
+    $: hintText =
+        mode === "navigation"
+            ? `Space: Activate · ${metaKeySymbol}: Menu`
+            : `Hold ${metaKeySymbol} for menu`;
+
+    function handleKeydown(event) {
+        const notInInput =
+            !document.activeElement?.matches("input, textarea") &&
+            !document.activeElement?.isContentEditable;
+        if (
+            notInInput &&
+            event.key === "Meta" &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.shiftKey
+        ) {
+            event.preventDefault();
+            dispatch("menuRequest");
+        }
+    }
 </script>
 
-<div class="active-tab-info-container" style="left: {x}px; top: {y}px;">
-    {#each tabs as tab (tab.id)}
-        <div
-            class="tab-item"
-            class:active={tab.isActive}
-            style="z-index: {getZIndex(tab)};"
-        >
-            <img
-                src={tab.favIconUrl || "placeholder.png"}
-                alt="Favicon"
-                class="tab-favicon"
-            />
-            <span class="tab-title">{tab.title}</span>
-            {#if tab.isActive}
-                <div class="quick-actions">
-                    <button>Share</button>
-                    <button>Reload</button>
-                    <button>Save</button>
+<svelte:window on:keydown={handleKeydown} />
+
+{#if tab}
+    <div class="active-tab-info" role="status" aria-live="polite">
+        <!-- row(favicon, column(title, row(url hostname, meta key hint))) -->
+        <div class="row">
+            <div class="favicon-slot">
+                {#if tab.favIconUrl && !faviconFailed}
+                    <img
+                        class="favicon"
+                        src={tab.favIconUrl}
+                        alt=""
+                        on:error={() => (faviconFailed = true)}
+                    />
+                {:else}
+                    <span class="favicon-fallback" title={tab.title}>
+                        {displayTitle
+                            ? displayTitle.charAt(0).toUpperCase()
+                            : "?"}
+                    </span>
+                {/if}
+            </div>
+            <div class="column">
+                <span class="title" title={tab.title}>{displayTitle}</span>
+                <div class="row url-hint-row">
+                    <span class="url" title={tab.url}>{displayHostname}</span>
+                    <span class="hint">{hintText}</span>
                 </div>
-            {/if}
+            </div>
         </div>
-    {/each}
-</div>
+    </div>
+{/if}
 
 <style>
-    .active-tab-info-container {
+    .active-tab-info {
         position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 999990;
+        width: 360px;
+        height: 80px;
+        padding: 12px 16px;
+        box-sizing: border-box;
+        display: flex;
+        background: var(--st-bg-primary, rgba(30, 30, 30, 0.95));
+        border-radius: 8px;
+        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .row {
+        display: flex;
+        align-items: stretch;
+        gap: 12px;
+
+        min-height: 0;
+    }
+
+    .column {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        transform: translate(-50%, -50%); /* Center the widget on mouse click */
-        background-color: rgba(255, 255, 255, 0.95);
-        border: 1px solid #ccc;
-        border-radius: 8px;
-        padding: 10px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        z-index: 1000;
+        gap: 2px;
+        flex-grow: 1;
+
+        min-width: 0;
+        justify-content: center;
     }
 
-    .tab-item {
+    .favicon-slot {
         display: flex;
         align-items: center;
-        gap: 10px;
-        padding: 8px 12px;
-        margin: 5px 0;
-        border-radius: 6px;
-        background-color: #f9f9f9;
-        width: 250px;
+        justify-content: center;
+
+        align-self: stretch;
+        padding: 4px 0;
         box-sizing: border-box;
-        transition: all 0.2s ease-in-out;
-        position: relative;
     }
 
-    .tab-item.active {
-        background-color: #e0f2f7; /* Highlight active tab */
-        border: 2px solid #007bff;
-        transform: scale(1.1);
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    .favicon {
+        height: 100%;
+        width: auto;
+        max-width: 24px;
+        object-fit: contain;
     }
 
-    .tab-favicon {
-        width: 16px;
-        height: 16px;
+    .favicon-fallback {
+        height: 100%;
+        min-height: 32px;
+        width: 24px;
+        min-width: 24px;
         flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--st-text-secondary, #b0b0b0);
+        background: var(--st-bg-secondary, rgba(50, 50, 50, 0.9));
+        border-radius: 4px;
     }
 
-    .tab-title {
+    .title {
+        font-size: 15px;
+        font-weight: 500;
+        line-height: 1.4;
+        color: var(--st-text-primary, #ffffff);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .url-hint-row {
+        gap: 8px;
+        margin-top: 2px;
+    }
+
+    .url-hint-row.row {
+        align-items: center;
+    }
+
+    .url {
+        font-size: 12px;
+        color: var(--st-text-secondary, #b0b0b0);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        flex-grow: 1;
-        font-size: 0.9em;
+        flex: 1;
+        min-width: 0;
     }
 
-    .tab-item.active .tab-title {
-        font-weight: bold;
-        font-size: 1em;
-    }
-
-    .quick-actions {
-        display: flex;
-        gap: 5px;
-    }
-
-    .quick-actions button {
-        background-color: #007bff;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        padding: 4px 8px;
-        cursor: pointer;
-        font-size: 0.8em;
-    }
-
-    .quick-actions button:hover {
-        background-color: #0056b3;
+    .hint {
+        font-size: 11px;
+        color: var(--st-text-muted, #808080);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex-shrink: 0;
     }
 </style>

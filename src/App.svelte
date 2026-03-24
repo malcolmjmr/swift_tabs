@@ -1,8 +1,11 @@
 <script>
     import { onMount, onDestroy } from "svelte";
+    import { fly } from "svelte/transition";
     import { get } from "svelte/store";
     import Toolbar from "./components/Toolbar.svelte";
     import TabSwitchingModal from "./components/TabSwitchingModal.svelte";
+    import TabMenu from "./components/tab/TabMenu.svelte";
+    import SystemMenu from "./components/SystemMenu.svelte";
     import {
         tabStore,
         currentWindowTabs,
@@ -11,8 +14,10 @@
         activeWindowId,
     } from "./stores/tabStore";
     import { chromeService } from "./services/chromeApi";
+    import { recentActionsStore } from "./stores/recentActionsStore";
     import TabsView from "./components/tabs_view/TabsView.svelte";
     import Omnibox from "./components/Omnibox.svelte";
+    import ActiveTabInfo from "./components/tab/ActiveTabInfo.svelte";
 
     let isInNavigationMode = false;
     let omniboxIsOpen = false;
@@ -37,6 +42,7 @@
         document.addEventListener("wheel", handleWheel, { passive: false });
 
         await tabStore.init();
+        await recentActionsStore.init();
         addChromeRuntimeMessageListener();
         fetchTabInfo();
         loadSettings();
@@ -51,6 +57,9 @@
         currentTab = await chromeService.getCurrentTab();
         selectedTab = currentTab;
         console.log("currentTab", currentTab);
+        if (currentTab && !isInNavigationMode && !isInTabSwitchingMode) {
+            showActiveTabInfoForCurrentTab();
+        }
     }
 
     function addChromeRuntimeMessageListener() {
@@ -61,8 +70,44 @@
                 onTabSwitchingModeMessage(message);
             } else if (message.type === "TABS_DATA_CHANGED") {
                 onTabsDataChangedMessage();
+            } else if (message.type === "TAB_UPDATED") {
+                onTabUpdatedMessage(message);
+            } else if (message.type === "TAB_ACTIVATED") {
+                onTabActivatedMessage();
             }
         });
+    }
+
+    async function onTabUpdatedMessage(message) {
+        const me = await chromeService.getCurrentTab();
+        if (me?.id === message.tabId) {
+            await fetchTabInfo();
+            showActiveTabInfoForCurrentTab();
+        }
+    }
+
+    async function onTabActivatedMessage() {
+        await fetchTabInfo();
+        showActiveTabInfoForCurrentTab();
+    }
+
+    function showActiveTabInfoForCurrentTab() {
+        if (isInNavigationMode || isInTabSwitchingMode) return;
+        showActiveTabInfo = true;
+        if (activeTabInfoDismissTimeout)
+            clearTimeout(activeTabInfoDismissTimeout);
+        activeTabInfoDismissTimeout = setTimeout(() => {
+            showActiveTabInfo = false;
+            activeTabInfoDismissTimeout = null;
+        }, ACTIVE_TAB_INFO_DISMISS_MS);
+    }
+
+    function hideActiveTabInfo() {
+        showActiveTabInfo = false;
+        if (activeTabInfoDismissTimeout) {
+            clearTimeout(activeTabInfoDismissTimeout);
+            activeTabInfoDismissTimeout = null;
+        }
     }
 
     async function onTabsDataChangedMessage() {
@@ -114,6 +159,10 @@
 
     let currentTab = null;
     let selectedTab = null;
+
+    const ACTIVE_TAB_INFO_DISMISS_MS = 3000;
+    let showActiveTabInfo = false;
+    let activeTabInfoDismissTimeout = null;
 
     async function onNavigationModeMessage(message) {
         isInNavigationMode = message.isInNavigationMode;
@@ -168,6 +217,9 @@
     function handleClick(event) {
         // if user clicks elements outside of #swift-tabs-root then dismiss current mode
         if (!event.target.closest("#swift-tabs-root")) {
+            if (showActiveTabInfo) {
+                hideActiveTabInfo();
+            }
             if (isInNavigationMode) {
                 isInNavigationMode = false;
                 chrome.runtime.sendMessage({
@@ -215,6 +267,23 @@
                 ].includes(event.key);
 
             if (
+                (event.key === "a" || event.key === "A") &&
+                !tabMenuIsOpen &&
+                (isInNavigationMode ? selectedTab : currentTab)
+            ) {
+                // "a" for actions — open Tab Menu anytime (not in input)
+                event.preventDefault();
+                event.stopPropagation();
+                tabMenuIsOpen = true;
+            } else if (
+                event.key === "Meta" &&
+                isInNavigationMode &&
+                selectedTab &&
+                !tabMenuIsOpen
+            ) {
+                event.preventDefault();
+                tabMenuIsOpen = true;
+            } else if (
                 isPrintableChar &&
                 isInNavigationMode &&
                 !omniboxIsOpen &&
@@ -241,13 +310,18 @@
                         isInNavigationMode: !isInNavigationMode,
                     });
                 }
-            } else if (event.key === "Escape" && isInTabSwitchingMode) {
-                event.preventDefault();
-                if (tabSwitchingDismissTimeout) {
-                    clearTimeout(tabSwitchingDismissTimeout);
-                    tabSwitchingDismissTimeout = null;
+            } else if (event.key === "Escape") {
+                if (isInTabSwitchingMode) {
+                    event.preventDefault();
+                    if (tabSwitchingDismissTimeout) {
+                        clearTimeout(tabSwitchingDismissTimeout);
+                        tabSwitchingDismissTimeout = null;
+                    }
+                    isInTabSwitchingMode = false;
+                } else if (showActiveTabInfo) {
+                    event.preventDefault();
+                    hideActiveTabInfo();
                 }
-                isInTabSwitchingMode = false;
             } else if (
                 (event.key === "Delete" || event.key === "Backspace") &&
                 isInNavigationMode &&
@@ -421,7 +495,14 @@
     }
 
     function handleWheel(event) {
-        if (!toolbarIsInFocus && (isInNavigationMode || event.metaKey)) {
+        if (!isInNavigationMode && !event.metaKey) {
+            if (showActiveTabInfo && event.deltaY > 0) {
+                hideActiveTabInfo();
+            } else if (!showActiveTabInfo && event.deltaY < 0 && currentTab) {
+                showActiveTabInfoForCurrentTab();
+            }
+        }
+        if (isInNavigationMode || event.metaKey) {
             let isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);
             if (isVerticalScroll) {
@@ -502,10 +583,16 @@
 />
 
 {#if tabMenuIsOpen}
-    <TabMenu />
-{:else if systemMenuIsOpen}
+    <TabMenu
+        tab={isInNavigationMode ? selectedTab : currentTab}
+        onClose={() => {
+            tabMenuIsOpen = false;
+        }}
+    />
+{/if}
+{#if systemMenuIsOpen}
     <SystemMenu />
-{:else if isInNavigationMode}
+{:else if isInNavigationMode && !tabMenuIsOpen}
     <TabsView windows={$windows} bind:currentTab bind:selectedTab />
     {#if omniboxIsOpen}
         <Omnibox
@@ -521,6 +608,16 @@
         currentWindowTabs={$currentWindowTabs}
         activeTabId={$activeTabId}
     />
+{:else if (showActiveTabInfo || tabMenuIsOpen) && (isInNavigationMode ? selectedTab : currentTab)}
+    <div in:fly={{ y: 20, duration: 150 }} out:fly={{ y: 20, duration: 200 }}>
+        <ActiveTabInfo
+            tab={isInNavigationMode ? selectedTab : currentTab}
+            mode="auto"
+            on:menuRequest={() => {
+                tabMenuIsOpen = true;
+            }}
+        />
+    </div>
 {/if}
 
 <style>

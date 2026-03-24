@@ -2,207 +2,478 @@
 
 ## Swift Tabs Chrome Extension
 
-This document catalogs the system logic controllers that manage state and operations. Since Swift Tabs follows a component-first architecture where logic primarily lives in Svelte components, controllers here represent the shared state stores and service modules that components interact with.
+This document defines the state management architecture for Swift Tabs. Controllers in this context are Svelte stores that manage application state and provide actions for modifying that state.
+
+**Related Documentation:**
+- [Needs Overview](../needs/needs_overview.md) - User needs requiring state management
+- [Features Overview](../features/features_overview.md) - Features using these controllers
+- [Interactions Overview](../interactions/interactions_overview.md) - User flows that modify state
 
 ---
 
-## Controller Architecture
+## Store Architecture
 
-### Design Philosophy
+### Core Stores
 
-Swift Tabs uses a **component-first state management** approach:
-
-- **Local component state**: Handles UI state, interaction logic, and component-specific data
-- **Global stores (read-only)**: Provide shared data (tabs, windows) that many components need
-- **Service modules**: Encapsulate Chrome API operations and external integrations
-
-Controllers documented here map to:
-1. **Svelte Stores** - Reactive global state
-2. **Service Modules** - API wrappers and business logic
+| Store | File | Purpose | Persistence |
+|-------|------|---------|-------------|
+| `tabStore` | `tabStore.js` | Tab/window data from Chrome API | No (live from Chrome) |
+| `uiStore` | `uiStore.js` | UI state (modes, visibility) | No (session only) |
+| `recentActionsStore` | `recentActionsStore.js` | Recently used tab actions | Yes (chrome.storage.local) |
+| `settingsStore` | `settingsStore.js` | User preferences | Yes (chrome.storage.local) |
 
 ---
 
-## Controller Catalog
+## tabStore.js
 
-| Controller | Type | Purpose | Status |
-|------------|------|---------|--------|
-| `tabStore` | Store | Manages tab/window data from Chrome API | Implemented |
-| `chromeService` | Service | Wraps Chrome extension APIs | Implemented |
-| `llmService` | Service | LLM integration for session titles | Planned |
+**File:** `src/stores/tabStore.js`
 
----
+**Purpose:** Central source of truth for all tab and window data from the Chrome API.
 
-## Store Controllers
+### Writable State
 
-### tabStore
-
-**File:** `src/stores/tabStore.js`  
-**Type:** Svelte Writable Store  
-**Scope:** Global (read-only for components)
-
-**Purpose:**
-Synchronizes with Chrome API to provide reactive tab and window data to all components. Acts as the single source of truth for browser state.
-
-**State Variables:**
 ```javascript
+// Core data (from Chrome API)
+export const windows = writable([]);           // All Chrome windows with tabs
+export const activeTabId = writable(null);     // Currently active tab ID
+export const activeWindowId = writable(null);  // Currently active window ID
+
+// Derived stores (computed from core)
+export const currentWindowTabs = derived(
+  [windows, activeWindowId],
+  ([$windows, $activeWindowId]) => {
+    const window = $windows.find(w => w.id === $activeWindowId);
+    return window?.tabs || [];
+  }
+);
+
+export const allTabs = derived(
+  windows,
+  $windows => $windows.flatMap(w => w.tabs || [])
+);
+```
+
+### Actions
+
+```javascript
+export const tabStore = {
+  // Initialize store from Chrome API
+  async init() {
+    await this.refreshState();
+  },
+
+  // Refresh all state from Chrome
+  async refreshState() {
+    const [windowsData, activeTab] = await Promise.all([
+      chromeService.getAllWindows(),
+      chromeService.getCurrentTab()
+    ]);
+    
+    windows.set(windowsData);
+    activeTabId.set(activeTab?.id || null);
+    activeWindowId.set(activeTab?.windowId || null);
+  },
+
+  // Tab actions
+  async activateTab(tabId) {
+    await chromeService.activateTab(tabId);
+    await this.refreshState();
+  },
+
+  async closeTab(tabId) {
+    await chromeService.closeTab(tabId);
+    await this.refreshState();
+  },
+
+  async moveTab(tabId, windowId, index) {
+    await chromeService.moveTab(tabId, windowId, index);
+    await this.refreshState();
+  },
+
+  // Window actions
+  async focusWindow(windowId) {
+    await chromeService.focusWindow(windowId);
+    await this.refreshState();
+  },
+
+  async createWindow(options) {
+    const window = await chromeService.createWindow(options);
+    await this.refreshState();
+    return window;
+  }
+};
+```
+
+---
+
+## uiStore.js
+
+**File:** `src/stores/uiStore.js`
+
+**Purpose:** Manage UI state for modes, visibility, and selections.
+
+### State
+
+```javascript
+// Navigation modes
+export const isInNavigationMode = writable(false);
+export const isInTabSwitchingMode = writable(false);
+export const selectedTab = writable(null);  // Currently selected tab in UI
+
+// Overlay visibility
+export const activeTabInfoVisible = writable(false);
+export const tabMenuOpen = writable(false);
+export const omniboxOpen = writable(false);
+export const windowsOverviewOpen = writable(false);
+
+// Timers (not exported, internal use)
+let dismissTimeout = null;
+```
+
+### Actions
+
+```javascript
+export const uiStore = {
+  // Navigation mode
+  enterNavigationMode() {
+    isInNavigationMode.set(true);
+    this.clearAllTimeouts();
+  },
+
+  exitNavigationMode() {
+    isInNavigationMode.set(false);
+    selectedTab.set(null);
+    this.closeAllOverlays();
+  },
+
+  // Tab switching mode
+  enterTabSwitchingMode(tab) {
+    isInTabSwitchingMode.set(true);
+    selectedTab.set(tab);
+    this.setDismissTimeout();
+  },
+
+  resetTabSwitchingTimeout() {
+    this.setDismissTimeout();
+  },
+
+  // Selection
+  selectTab(tab) {
+    selectedTab.set(tab);
+  },
+
+  // Overlay management
+  showActiveTabInfo() {
+    activeTabInfoVisible.set(true);
+    this.setDismissTimeout(3000);
+  },
+
+  hideActiveTabInfo() {
+    activeTabInfoVisible.set(false);
+    this.clearDismissTimeout();
+  },
+
+  openTabMenu() {
+    tabMenuOpen.set(true);
+    this.clearDismissTimeout();
+  },
+
+  closeTabMenu() {
+    tabMenuOpen.set(false);
+  },
+
+  openOmnibox(query = '') {
+    omniboxOpen.set(true);
+    omniboxQuery.set(query);
+  },
+
+  // Private helpers
+  setDismissTimeout(ms = 1500) {
+    if (dismissTimeout) clearTimeout(dismissTimeout);
+    dismissTimeout = setTimeout(() => {
+      isInTabSwitchingMode.set(false);
+      activeTabInfoVisible.set(false);
+    }, ms);
+  },
+
+  clearDismissTimeout() {
+    if (dismissTimeout) {
+      clearTimeout(dismissTimeout);
+      dismissTimeout = null;
+    }
+  },
+
+  closeAllOverlays() {
+    activeTabInfoVisible.set(false);
+    tabMenuOpen.set(false);
+    omniboxOpen.set(false);
+    windowsOverviewOpen.set(false);
+  }
+};
+```
+
+---
+
+## recentActionsStore.js
+
+**File:** `src/stores/recentActionsStore.js`
+
+**Purpose:** Persist recently used tab actions for quick repeat access.
+
+### Data Structure
+
+```javascript
+// Recent action entry
 {
-  tabs: [],           // Flat array of all tabs across all windows
-  windows: [],        // Array of window objects with embedded tabs
-  activeTabId: null,  // Currently active tab ID
-  activeWindowId: null, // Currently focused window ID
-  initialized: false   // Whether initial load complete
+  id: 'save-to-task-project-alpha',
+  category: 'save',           // 'save', 'move', 'basic', 'close'
+  action: 'save_to',          // Action identifier
+  targetType: 'task',         // 'task', 'bookmark', 'window', etc.
+  targetName: 'Project Alpha', // Display name
+  targetId: 123,              // Optional ID reference
+  timestamp: 1699123456789,   // Last used
+  useCount: 5                 // Usage count for ranking
 }
 ```
 
-**Derived Stores:**
-- `tabs`: Flattened tab array
-- `windows`: Window objects
-- `activeTabId`, `activeWindowId`: IDs
-- `currentWindowTabs`: Tabs in the active window only
+### State
 
-**Methods:**
-- `init()`: Load initial state from Chrome API
-- `refreshState()`: Re-fetch all windows and tabs
-- `activateTab(tabId)`: Switch browser to specified tab
-- `closeTab(tabId)`: Close tab with state refresh
-- `moveTab(tabId, windowId)`: Move tab between windows
-- `reloadTab(tabId)`: Reload specified tab
-- `pinTab(tabId)`: Toggle pinned state
-- `duplicateTab(tabId)`: Create copy of tab
-- `createTab(options)`: Open new tab
+```javascript
+export const recentActions = writable([]);
+const MAX_RECENT_ACTIONS = 8;
+const STORAGE_KEY = 'swift_tabs_recent_actions';
+```
 
-**Usage Pattern:**
+### Actions
+
+```javascript
+export const recentActionsStore = {
+  // Load from persistence
+  async init() {
+    const data = await chrome.storage.local.get(STORAGE_KEY);
+    recentActions.set(data[STORAGE_KEY] || []);
+  },
+
+  // Add new action to recent
+  async addAction(action) {
+    const current = get(recentActions);
+    
+    // Remove duplicates (same action + same target)
+    const filtered = current.filter(a => 
+      !(a.action === action.action && 
+        a.targetId === action.targetId &&
+        a.targetType === action.targetType)
+    );
+    
+    // Add new action at beginning
+    const updated = [action, ...filtered].slice(0, MAX_RECENT_ACTIONS);
+    
+    recentActions.set(updated);
+    await this.save();
+  },
+
+  // Get top N recent actions
+  getTopActions(count = 5) {
+    const actions = get(recentActions);
+    return actions.slice(0, count);
+  },
+
+  // Clear all recent actions
+  async clear() {
+    recentActions.set([]);
+    await this.save();
+  },
+
+  // Save to Chrome storage
+  async save() {
+    const data = get(recentActions);
+    await chrome.storage.local.set({ [STORAGE_KEY]: data });
+  }
+};
+```
+
+---
+
+## settingsStore.js
+
+**File:** `src/stores/settingsStore.js`
+
+**Purpose:** User preferences and configuration.
+
+### Default Settings
+
+```javascript
+const DEFAULT_SETTINGS = {
+  // Toolbar behavior
+  toolbarInPopup: false,
+  openToolbarWithMetaKey: false,
+  
+  // Gesture settings
+  queueLinkWithMetaKey: false,
+  copyImageWithMetaKey: false,
+  
+  // View preferences
+  defaultView: 'windows',  // 'windows', 'tabs', 'history', 'bookmarks'
+  
+  // Appearance
+  theme: 'system',  // 'light', 'dark', 'system'
+  
+  // Timing
+  tabInfoDismissDelay: 3000,
+  tabSwitchingDismissDelay: 1500
+};
+```
+
+### State
+
+```javascript
+export const settings = writable(DEFAULT_SETTINGS);
+const STORAGE_KEY = 'swift_tabs_settings';
+```
+
+### Actions
+
+```javascript
+export const settingsStore = {
+  // Load from persistence
+  async init() {
+    const data = await chrome.storage.local.get(STORAGE_KEY);
+    const saved = data[STORAGE_KEY] || {};
+    settings.set({ ...DEFAULT_SETTINGS, ...saved });
+  },
+
+  // Update single setting
+  async update(key, value) {
+    settings.update(s => ({ ...s, [key]: value }));
+    await this.save();
+  },
+
+  // Update multiple settings
+  async updateMany(updates) {
+    settings.update(s => ({ ...s, ...updates }));
+    await this.save();
+  },
+
+  // Reset to defaults
+  async reset() {
+    settings.set(DEFAULT_SETTINGS);
+    await this.save();
+  },
+
+  // Save to Chrome storage
+  async save() {
+    const data = get(settings);
+    await chrome.storage.local.set({ [STORAGE_KEY]: data });
+  }
+};
+```
+
+---
+
+## Store Integration Patterns
+
+### Pattern 1: Read from Multiple Stores
+
 ```svelte
 <script>
-  import { currentWindowTabs, activeTabId } from '../stores/tabStore';
-  // Read-only access in components
-  $: tabs = $currentWindowTabs;
+  import { windows, activeTabId, isInNavigationMode } from '../stores/tabStore';
+  import { selectedTab } from '../stores/uiStore';
+  
+  // Reactive computation from multiple stores
+  $: currentWindow = $windows.find(w => w.id === $activeWindowId);
+  $: tabs = currentWindow?.tabs || [];
+  $: displayTab = $isInNavigationMode ? $selectedTab : currentTab;
 </script>
 ```
 
----
+### Pattern 2: Action with Store Updates
 
-## Service Controllers
-
-### chromeService
-
-**File:** `src/services/chromeApi.js` (implied)  
-**Type:** Service Module  
-**Scope:** Internal (used by tabStore and components)
-
-**Purpose:**
-Wraps Chrome Extension APIs to provide promise-based, error-handled access to browser functionality.
-
-**Methods:**
-- `getWindows()`: Fetch all windows with tabs
-- `getCurrentTab()`: Get active tab in current window
-- `activateTab(tabId)`: Make tab active
-- `closeTab(tabId)`: Remove tab
-- `moveTab(tabId, windowId)`: Change tab's window
-- `reloadTab(tabId)`: Reload tab
-- `createTab(options)`: Create new tab
-- `createWindow(options)`: Create new window
-- `getBookmarks()`: Access bookmark tree
-- `createBookmark(options)`: Add bookmark
-
-**Error Handling:**
-- All methods return Promises
-- Errors logged and re-thrown for component handling
-- Graceful degradation for missing permissions
-
----
-
-### llmService (Planned)
-
-**File:** `src/services/llmService.js` (future)  
-**Type:** Service Module  
-**Scope:** Internal (used by save session feature)
-
-**Purpose:**
-Integrate with LLM API to generate meaningful session names based on tab content.
-
-**Planned Methods:**
-- `generateSessionTitle(tabs)`: Send tab data, receive suggested title
-- `summarizeTabs(tabs)`: Generate description of tab collection
-
-**Configuration:**
-- API key management (extension storage)
-- Model selection (configurable)
-- Fallback strategies if LLM unavailable
-
----
-
-## State Flow Diagram
-
+```svelte
+<script>
+  import { tabStore } from '../stores/tabStore';
+  import { uiStore, recentActionsStore } from '../stores/uiStore';
+  
+  async function closeTab(tab) {
+    // Close the tab
+    await tabStore.closeTab(tab.id);
+    
+    // Update UI
+    uiStore.hideActiveTabInfo();
+    
+    // Track action
+    await recentActionsStore.addAction({
+      category: 'basic',
+      action: 'close',
+      timestamp: Date.now()
+    });
+  }
+</script>
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Chrome Browser                          │
-│  (Tabs, Windows, Bookmarks, Events)                          │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    chromeService                               │
-│  (API wrapper, promise conversion, error handling)            │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    tabStore (Svelte Store)                     │
-│  (Reactive state, derived stores, update methods)             │
-└─────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              ▼               ▼               ▼
-    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-    │   Toolbar    │ │ TabSwitching │ │   Windows    │
-    │   Component  │ │    Modal     │ │    View      │
-    │              │ │              │ │              │
-    │ Local state: │ │ Local state: │ │ Local state: │
-    │ • selectedTab│ │ • isVisible  │ │ • selectedWin│
-    │ • viewType   │ │ • scrollPos  │ │ • isExpanded │
-    │ • showMenu   │ │              │ │              │
-    └──────────────┘ └──────────────┘ └──────────────┘
+
+### Pattern 3: Derived Store with Custom Logic
+
+```javascript
+// Derived store for filtered/searchable tabs
+export const searchableTabs = derived(
+  [allTabs, omniboxQuery],
+  ([$allTabs, $query]) => {
+    if (!$query) return $allTabs;
+    
+    const lowerQuery = $query.toLowerCase();
+    return $allTabs.filter(tab => 
+      tab.title?.toLowerCase().includes(lowerQuery) ||
+      tab.url?.toLowerCase().includes(lowerQuery)
+    );
+  }
+);
 ```
 
 ---
 
-## Component State vs. Store Data
+## Chrome API Integration
 
-| Aspect | Component State | Store Data |
-|--------|-----------------|------------|
-| **What** | UI state, selections, visibility | Browser tabs, windows, bookmarks |
-| **Scope** | Single component | Application-wide |
-| **Persistence** | Ephemeral (in memory) | Syncs with Chrome API |
-| **Writes** | Component owns its state | Store methods only |
-| **Reads** | Local `$:` reactive | `$store` derived subscriptions |
+All stores interact with Chrome APIs through the `chromeService`:
 
----
+```javascript
+// src/services/chromeApi.js
+export const chromeService = {
+  async getAllWindows() {
+    return chrome.windows.getAll({ populate: true });
+  },
 
-## Code-to-Documentation Mapping
+  async getCurrentTab() {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tab;
+  },
 
-| Controller Doc | Source File | Components Using It |
-|----------------|-------------|---------------------|
-| `tabStore` | `src/stores/tabStore.js` | Toolbar, TabSwitchingModal, WindowsView, App |
-| `chromeService` | `src/services/chromeApi.js` | tabStore, App (direct for special cases) |
-| `llmService` | Planned | Window save dialog |
+  async activateTab(tabId) {
+    await chrome.tabs.update(tabId, { active: true });
+  },
 
----
+  async closeTab(tabId) {
+    await chrome.tabs.remove(tabId);
+  },
 
-## Future Controllers
+  async moveTab(tabId, windowId, index) {
+    await chrome.tabs.move(tabId, { windowId, index });
+  },
 
-As features expand, consider adding:
+  async focusWindow(windowId) {
+    await chrome.windows.update(windowId, { focused: true });
+  },
 
-1. **sessionStore**: Manage saved sessions metadata beyond bookmarks
-2. **historyStore**: Track recently closed tabs for undo/restore
-3. **settingsStore**: User preferences and configuration
-4. **syncService**: Cross-device synchronization
+  async createWindow(options) {
+    return chrome.windows.create(options);
+  }
+};
+```
 
 ---
 
 ## Notes
 
-- Controllers are documented here but detailed specs are minimal since logic lives in components
-- For component-specific logic, see interaction and interface documentation
-- Store methods that modify browser state always call `refreshState()` after to keep UI in sync
+- Stores follow Svelte's reactive model - components auto-update when store values change
+- Chrome API calls are async and always followed by `refreshState()` to sync
+- Persistent stores (recent actions, settings) use `chrome.storage.local`
+- UI state is ephemeral and resets on page reload
+- All derived stores recalculate automatically when dependencies change
