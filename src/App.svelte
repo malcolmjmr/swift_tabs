@@ -539,10 +539,12 @@
                     const idx = cur >= 0 ? cur : 0;
                     selectedTab = tabs[Math.min(tabs.length - 1, idx + 1)];
                 } else if (event.key === "ArrowLeft" && wl.length > 0) {
-                    navCarouselIndex =
-                        (navCarouselIndex - 1 + wl.length) % wl.length;
+                    navCarouselIndex = Math.max(0, navCarouselIndex - 1);
                 } else if (event.key === "ArrowRight" && wl.length > 0) {
-                    navCarouselIndex = (navCarouselIndex + 1) % wl.length;
+                    navCarouselIndex = Math.min(
+                        wl.length - 1,
+                        navCarouselIndex + 1,
+                    );
                 }
             } else if (
                 ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
@@ -742,8 +744,10 @@
         if (Math.abs(scrollCarouselDelta) >= SCROLL_SELECT_THRESHOLD) {
             const step = scrollCarouselDelta > 0 ? 1 : -1;
             scrollCarouselDelta = 0;
-            navCarouselIndex =
-                (navCarouselIndex + step + wl.length) % wl.length;
+            navCarouselIndex = Math.max(
+                0,
+                Math.min(wl.length - 1, navCarouselIndex + step),
+            );
         }
     }
 

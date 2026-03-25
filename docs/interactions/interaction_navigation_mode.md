@@ -43,7 +43,7 @@ While in Navigation Mode, horizontal input **only changes which window’s tab l
 | Step | User Action | System Response | State Change |
 |------|-------------|-----------------|--------------|
 | 1 | User scrolls **horizontally** (with Meta, or primary scroll axis horizontal) | `deltaX` accumulates | `scrollCarouselDelta` accumulates |
-| 2 | Threshold reached | Carousel moves to next/previous window | `navCarouselIndex` updates (wrap); TabsView track scrolls to snap |
+| 2 | Threshold reached | Carousel moves to next/previous window | `navCarouselIndex` updates (clamped at 0 and last window); TabsView track scrolls to snap |
 | 3 | TabsView updates | New slide shows that window’s tabs; dots reflect active window | `selectedTab` defaults to that window’s active tab (or first tab) |
 | 4 | User may tap a **dot** | Jump to that window’s slide | `navCarouselIndex` = dot index |
 
@@ -220,7 +220,7 @@ let omniboxQuery = "";
 import { windows } from './stores/tabStore';
 
 // Vertical scroll: tabs in windowsList[navCarouselIndex], not necessarily Chrome’s focused window
-// Horizontal scroll: step navCarouselIndex with wrap; TabsView binds carouselIndex
+// Horizontal scroll: step navCarouselIndex (clamped); TabsView binds carouselIndex
 ```
 
 ---
@@ -233,7 +233,7 @@ import { windows } from './stores/tabStore';
 | **Space** | In Navigation Mode | Activate selected tab, exit mode |
 | **Escape** | Navigation Mode | Does **not** exit Navigation Mode by itself; closes help / tab-switching overlay / Active Tab Info when applicable |
 | **↑ / ↓** | In Navigation Mode (omnibox & tab menu closed) | Move `selectedTab` within tabs of the **carousel-visible** window (clamped, no wrap) |
-| **← / →** | In Navigation Mode (omnibox & tab menu closed) | Step **carousel** to previous/next window (`navCarouselIndex`, wrap); does not `focusWindow` |
+| **← / →** | In Navigation Mode (omnibox & tab menu closed) | Step **carousel** to previous/next window (`navCarouselIndex`, clamped at ends); does not `focusWindow` |
 | **Meta + Scroll Vertical** | In Navigation Mode | Same as ↑ / ↓ for the visible window’s tabs |
 | **Meta + Scroll Horizontal** | In Navigation Mode | Step carousel window index (same as ← / →) |
 | **Any printable char** | In Navigation Mode, not in Omnibox | Open Omnibox, type character |
