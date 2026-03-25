@@ -8,37 +8,35 @@
 
 ### Description
 
-When the user performs a short right-click within the active tab, display an overlay showing the current tab's information along with adjacent tabs. This provides immediate context about the current browsing position without requiring the user to scan the tab bar.
+Display an overlay showing the current tab's information (favicon, title, URL, navigation state, and audio status) automatically upon tab activation or navigation. This provides immediate context about the current browsing position without requiring the user to scan the tab bar.
 
 ---
 
 ### Trigger
 
-- **Activation:** Automatically appears upon **URL navigation** (switching tabs or loading a new URL).
-- **Symbol:** Includes the **symbol of the Meta key** (⌘ on Mac, ⊞ on Windows) as a hint for the Tab Menu.
+- **Activation:** Automatically appears upon **tab activation** (switching tabs) or **page navigation** (URL change, including SPA navigation).
+- **SPA Detection:** Click-based detection catches Single Page App navigations by monitoring `document.title` changes.
 
 ---
 
 ### Visibility & Persistence
 
 - **Auto-Hide:** Automatically hides when the user **scrolls down** on the web page.
-- **On-Demand Show:** Optionally reappears when the user **scrolls up** (providing quick context while reading).
 - **Manual Dismiss:** Click outside overlay, press Escape, or scroll down.
+- **Timeout:** Auto-dismisses after 3 seconds if not manually dismissed.
 
 ---
 
-### Quick Actions
+### Information Displayed
 
-| Action | Icon | Behavior |
-|--------|------|----------|
-| Share | Share icon | Copy URL to clipboard, show brief confirmation |
-| Reload | Refresh icon | Reload active tab immediately |
-| Save | Star/bookmark icon | Save to bookmarks (behavior varies by window state) |
-
-**Save Action Behavior:**
-- If unsaved window: Open bookmark menu to select folder/create new
-- If saved window ("space"): Auto-save to matching bookmark folder
-- If already bookmarked: Allow editing bookmark details
+| Element | Icon/Format | Condition |
+|---------|-------------|-----------|
+| Favicon | Tab's favicon or first-letter fallback | Always shown |
+| Title | Tab title (truncated if long) | Always shown |
+| URL | Hostname only (e.g., example.com) | Always shown |
+| Back Navigation | `←` arrow | Shown when back navigation is possible |
+| Forward Navigation | `→` arrow | Shown when forward navigation is possible |
+| Audio Playing | `🔊` icon | Shown when tab is playing audio |
 
 ---
 
@@ -46,55 +44,51 @@ When the user performs a short right-click within the active tab, display an ove
 
 **Layout:**
 ```
-┌─────────────────────────────┐
-│  [Favicon] Tab Title Above  │  ← Previous tab (smaller)
-├─────────────────────────────┤
-│      [Large Favicon]        │  ← Active tab (highlighted)
-│      Full Tab Title         │
-│  [Share] [Reload] [Save]    │  ← Quick actions
-├─────────────────────────────┤
-│  [Favicon] Tab Title Below  │  ← Next tab (smaller)
-└─────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  [🔲 Favicon]  Page Title Goes Here     │
+│  ← → example.com                🔊      │
+└─────────────────────────────────────────┘
 ```
 
-**Styling:**
-- Centered overlay, floating near cursor or screen center
-- Semi-transparent backdrop to focus attention
-- Active tab has accent border or highlight
-- Adjacent tabs muted/grayed
+**Position:** Bottom-right corner, 20px from edges  
+**Style:** Semi-transparent dark background, light text  
+**Size:** Fixed 360px × 80px
 
 ---
 
 ### Dismissal
 
-- **Auto-dismiss:** When user releases right-click (mouse up)
-- **Manual dismiss:** Click outside overlay, press Escape
+- **Scroll down:** Hide immediately when user scrolls down (deltaY > 0)
+- **Click outside:** Hide immediately when clicking outside the overlay
+- **Escape key:** Hide immediately when Escape is pressed
+- **Timeout:** Auto-fade out after 3000ms of no interaction
 - **Transition:** Fade out over 200ms
 
 ---
 
 ### Code References
 
-- Implementation: `Toolbar.svelte`, `ActiveTabLabel.svelte`
-- Trigger: `App.svelte` right-click handlers (lines 200-300)
-- State: Local component state in `Toolbar`
-- Store access: `activeTabId`, `currentWindowTabs` (read-only)
+- Implementation: `ActiveTabInfo.svelte`, `App.svelte`
+- Trigger: `App.svelte` - `fetchTabInfo()`, `onTabActivatedMessage()`, `onTabUpdatedMessage()`
+- SPA Detection: `App.svelte` - `handleClick()` with `lastDocumentTitle` tracking
+- State: Local state in `App.svelte` (`showActiveTabInfo`, `lastDocumentTitle`)
+- Store access: `chromeService.getCurrentTab()` for tab data including `audible`, navigation state
 
 ---
 
 ### Dependencies
 
-- `tabStore` for tab data
-- Chrome API for reload action
-- Clipboard API for share action
-- Bookmarks API for save action
+- Chrome Tabs API for tab information (title, URL, favicon, audible)
+- Chrome History/Navigation API (indirectly via tab state for back/forward)
 
 ---
 
 ### Future Enhancements
 
+- ~~Audio playing indicator~~ ✅ **Implemented**
+- ~~Back/Forward navigation indicators~~ ✅ **Implemented**
 - Show more adjacent tabs (2 above, 2 below)
 - Tab preview thumbnails instead of just favicons
 - Pinned tab indicator
-- Audio playing indicator
 - Loading state indicator
+- Quick actions (Share, Reload, Save)

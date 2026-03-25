@@ -162,11 +162,12 @@
         if (Math.abs(scrollSelectDelta) >= SCROLL_SELECT_THRESHOLD) {
             const step = scrollSelectDelta > 0 ? -1 : 1;
             scrollSelectDelta = 0;
-            selectedIndex = Math.min(
-                Math.max(0, selectedIndex + step),
-                selectableList.length - 1,
+            selectedIndex = Math.max(
+                0,
+                Math.min(selectableList.length - 1, selectedIndex + step),
             );
-            scrollSelectedIntoView();
+
+            //scrollSelectedIntoView();
         }
     }
 

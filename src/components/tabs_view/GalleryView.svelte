@@ -1,22 +1,39 @@
 <script>
     export let tabs;
-    export let currentTab;
-    export let selectedTab;
+    export let currentTab = null;
+    export let selectedTab = null;
+
+    function hostname(url) {
+        if (!url) return "";
+        try {
+            return new URL(url).hostname;
+        } catch {
+            return "";
+        }
+    }
 </script>
 
 <div class="gallery-view">
     <div class="gallery-view-container">
         {#each tabs as tab (tab.id)}
-            <div class="gallery-view-item">
-                <img
-                    src={tab.favIconUrl}
-                    alt={tab.title}
-                    class="gallery-view-item-icon"
-                />
+            <div
+                class="gallery-view-item"
+                class:selected={selectedTab != null && tab.id === selectedTab.id}
+                class:active={currentTab != null && tab.id === currentTab.id}
+            >
+                {#if tab.favIconUrl}
+                    <img
+                        src={tab.favIconUrl}
+                        alt=""
+                        class="gallery-view-item-icon"
+                    />
+                {:else}
+                    <span class="gallery-fallback"
+                        >{(tab.title || "?").charAt(0).toUpperCase()}</span
+                    >
+                {/if}
                 <div class="gallery-view-item-title">{tab.title}</div>
-                <div class="gallery-view-item-url">
-                    {new URL(tab.url).hostname}
-                </div>
+                <div class="gallery-view-item-url">{hostname(tab.url)}</div>
             </div>
         {/each}
     </div>
@@ -26,54 +43,74 @@
     .gallery-view {
         display: flex;
         flex-grow: 1;
+        width: 100%;
     }
+
     .gallery-view-container {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
-        justify-content: start;
-        align-items: start;
-        height: 100%;
+        gap: 8px;
+        justify-content: flex-start;
+        align-items: flex-start;
         width: 100%;
-        padding: 10px 0px;
+        padding: 4px 0;
     }
+
     .gallery-view-item {
         display: flex;
         flex-wrap: wrap;
-        align-items: start;
-        justify-content: start;
-        gap: 10px;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 8px;
         padding: 10px;
         border-radius: 8px;
-        background-color: #333;
-        transition: background-color 0.2s;
-        width: calc(50% - 16px);
-        height: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
+        transition: background 0.1s;
+        width: calc(50% - 6px);
+        min-width: 120px;
         max-width: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
+        border: 1px solid transparent;
     }
+
+    .gallery-view-item.selected,
+    .gallery-view-item.active {
+        border-color: var(--st-border-color, rgba(255, 255, 255, 0.12));
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+    }
+
     .gallery-view-item-icon {
         width: 24px;
         height: 24px;
-        border-radius: 8px;
-        background-color: #333;
+        border-radius: 4px;
+        object-fit: contain;
     }
-    .gallery-view-item-icon:hover {
-        background-color: #555;
+
+    .gallery-fallback {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--st-text-muted, #808080);
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
+        border-radius: 4px;
     }
-    .gallery-view-item-icon:active {
-        background-color: #777;
-    }
-    .gallery-view-item-icon:focus {
-        background-color: #999;
-    }
+
     .gallery-view-item-title,
     .gallery-view-item-url {
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 100%;
-        text-align: center;
+        text-align: left;
+        color: var(--st-text-primary, #ffffff);
+    }
+
+    .gallery-view-item-url {
+        font-size: 12px;
+        color: var(--st-text-muted, #808080);
     }
 </style>

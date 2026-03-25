@@ -18,12 +18,15 @@
     import TabsView from "./components/tabs_view/TabsView.svelte";
     import Omnibox from "./components/Omnibox.svelte";
     import ActiveTabInfo from "./components/tab/ActiveTabInfo.svelte";
+    import HelpMenu from "./components/HelpMenu.svelte";
 
     let isInNavigationMode = false;
     let omniboxIsOpen = false;
     let omniboxQuery = "";
+    let omniboxOpenedStandalone = false; // true when "o" opened it from outside nav mode
     let tabMenuIsOpen = false;
     let systemMenuIsOpen = false;
+    let helpMenuIsOpen = false;
 
     const TAB_SWITCHING_DISMISS_MS = 1500;
     let isInTabSwitchingMode = false;
@@ -36,10 +39,12 @@
 
     let rightClickTimer;
     const longPressThreshold = 500;
+    let lastDocumentTitle = "";
 
     onMount(async () => {
         console.log("App mounted");
         document.addEventListener("wheel", handleWheel, { passive: false });
+        document.addEventListener("click", handleDocumentClick);
 
         await tabStore.init();
         await recentActionsStore.init();
@@ -50,12 +55,23 @@
 
     onDestroy(() => {
         document.removeEventListener("wheel", handleWheel, { passive: false });
+        document.removeEventListener("click", handleDocumentClick);
     });
+
+    function handleDocumentClick() {
+        setTimeout(() => {
+            if (document.title !== lastDocumentTitle) {
+                lastDocumentTitle = document.title;
+                showActiveTabInfoForCurrentTab();
+            }
+        }, 100);
+    }
 
     async function fetchTabInfo() {
         console.log("fetchTabInfo");
         currentTab = await chromeService.getCurrentTab();
         selectedTab = currentTab;
+        lastDocumentTitle = document.title;
         console.log("currentTab", currentTab);
         if (currentTab && !isInNavigationMode && !isInTabSwitchingMode) {
             showActiveTabInfoForCurrentTab();
@@ -94,20 +110,10 @@
     function showActiveTabInfoForCurrentTab() {
         if (isInNavigationMode || isInTabSwitchingMode) return;
         showActiveTabInfo = true;
-        if (activeTabInfoDismissTimeout)
-            clearTimeout(activeTabInfoDismissTimeout);
-        activeTabInfoDismissTimeout = setTimeout(() => {
-            showActiveTabInfo = false;
-            activeTabInfoDismissTimeout = null;
-        }, ACTIVE_TAB_INFO_DISMISS_MS);
     }
 
     function hideActiveTabInfo() {
         showActiveTabInfo = false;
-        if (activeTabInfoDismissTimeout) {
-            clearTimeout(activeTabInfoDismissTimeout);
-            activeTabInfoDismissTimeout = null;
-        }
     }
 
     async function onTabsDataChangedMessage() {
@@ -160,14 +166,26 @@
     let currentTab = null;
     let selectedTab = null;
 
-    const ACTIVE_TAB_INFO_DISMISS_MS = 3000;
+    /** Carousel window index in TabsView (sorted open windows); see tabs_view/TabsView.svelte */
+    let navCarouselIndex = 0;
+
     let showActiveTabInfo = false;
-    let activeTabInfoDismissTimeout = null;
+
+    function sortedOpenWindows() {
+        return [...get(windows)]
+            .filter((w) => w.tabs?.length > 0)
+            .sort((a, b) => a.id - b.id);
+    }
 
     async function onNavigationModeMessage(message) {
         isInNavigationMode = message.isInNavigationMode;
         if (isInNavigationMode) {
             await tabStore.refreshState();
+            const wl = sortedOpenWindows();
+            const idx = currentTab
+                ? wl.findIndex((w) => w.id === currentTab.windowId)
+                : -1;
+            navCarouselIndex = idx >= 0 ? idx : 0;
         }
     }
 
@@ -235,98 +253,226 @@
                 });
             }
             omniboxIsOpen = false;
+            omniboxOpenedStandalone = false;
             tabMenuIsOpen = false;
             systemMenuIsOpen = false;
+            helpMenuIsOpen = false;
         }
     }
 
+    function isInTypingContext() {
+        const el = document.activeElement;
+        if (!el || typeof el.matches !== "function") return false;
+        if (el.matches("input, textarea, select")) return true;
+        return el.isContentEditable;
+    }
+
+    function noModifiersStrict(event) {
+        return (
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.shiftKey
+        );
+    }
+
+    function noModifiersForHelpKey(event) {
+        return !event.ctrlKey && !event.altKey && !event.metaKey;
+    }
+
+    function isIdleForGlobalTabActions() {
+        return (
+            !isInNavigationMode &&
+            !omniboxIsOpen &&
+            !tabMenuIsOpen &&
+            !isInTabSwitchingMode &&
+            !systemMenuIsOpen &&
+            !helpMenuIsOpen
+        );
+    }
+
     async function handleKeydown(event) {
-        // is input field or contenteditable istrue
+        if (isInTypingContext()) return;
 
-        let isNotInputField =
-            !document.activeElement.matches("input, textarea");
-        let isNotContentEditable = !document.activeElement.isContentEditable;
+        const isPrintableChar =
+            event.key.length === 1 &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.shiftKey &&
+            ![
+                " ",
+                "Enter",
+                "Escape",
+                "ArrowUp",
+                "ArrowDown",
+                "ArrowLeft",
+                "ArrowRight",
+                "Delete",
+                "Backspace",
+                "Tab",
+            ].includes(event.key);
 
-        if (isNotInputField && isNotContentEditable) {
-            const isPrintableChar =
-                event.key.length === 1 &&
-                !event.ctrlKey &&
-                !event.altKey &&
-                !event.metaKey &&
-                ![
-                    " ",
-                    "Enter",
-                    "Escape",
-                    "ArrowUp",
-                    "ArrowDown",
-                    "ArrowLeft",
-                    "ArrowRight",
-                    "Delete",
-                    "Backspace",
-                    "Tab",
-                ].includes(event.key);
-
-            if (
-                (event.key === "a" || event.key === "A") &&
-                !tabMenuIsOpen &&
-                (isInNavigationMode ? selectedTab : currentTab)
+        if (
+            ((event.key === "?" && noModifiersForHelpKey(event)) ||
+                (event.key === "/" && noModifiersStrict(event))) &&
+            isIdleForGlobalTabActions()
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            helpMenuIsOpen = true;
+        } else if (
+            (event.key === "o" ||
+                event.key === "O" ||
+                event.key === "n" ||
+                event.key === "N") &&
+            noModifiersStrict(event) &&
+            !omniboxIsOpen &&
+            !tabMenuIsOpen &&
+            !helpMenuIsOpen
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            omniboxQuery = "";
+            omniboxIsOpen = true;
+            omniboxOpenedStandalone = !isInNavigationMode;
+            if (!isInNavigationMode) {
+                isInNavigationMode = true;
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode,
+                });
+            }
+        } else if (
+            (event.key === "a" ||
+                event.key === "A" ||
+                event.key === "m" ||
+                event.key === "M") &&
+            noModifiersStrict(event) &&
+            !tabMenuIsOpen &&
+            !helpMenuIsOpen &&
+            (isInNavigationMode ? selectedTab : currentTab)
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            tabMenuIsOpen = true;
+        } else if (
+            event.key === "Meta" &&
+            isInNavigationMode &&
+            selectedTab &&
+            !tabMenuIsOpen &&
+            !helpMenuIsOpen
+        ) {
+            event.preventDefault();
+            tabMenuIsOpen = true;
+        } else if (
+            isPrintableChar &&
+            isInNavigationMode &&
+            !omniboxIsOpen &&
+            !helpMenuIsOpen &&
+            window.getSelection().toString().length === 0
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            omniboxQuery = event.key;
+            omniboxIsOpen = true;
+            omniboxOpenedStandalone = false;
+        } else if (event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            if (isInNavigationMode && selectedTab) {
+                chromeService.activateTab(selectedTab.id);
+                isInNavigationMode = false;
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode,
+                });
+            } else {
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode: !isInNavigationMode,
+                });
+            }
+        } else if (event.key === "Escape") {
+            if (helpMenuIsOpen) {
+                event.preventDefault();
+                helpMenuIsOpen = false;
+            } else if (isInTabSwitchingMode) {
+                event.preventDefault();
+                if (tabSwitchingDismissTimeout) {
+                    clearTimeout(tabSwitchingDismissTimeout);
+                    tabSwitchingDismissTimeout = null;
+                }
+                isInTabSwitchingMode = false;
+            } else if (showActiveTabInfo) {
+                event.preventDefault();
+                hideActiveTabInfo();
+            }
+        } else if (
+            isIdleForGlobalTabActions() &&
+            noModifiersStrict(event) &&
+            (event.key === "Delete" ||
+                event.key === "Backspace" ||
+                event.key === "Enter" ||
+                event.key === "c" ||
+                event.key === "C" ||
+                event.key === "r" ||
+                event.key === "R" ||
+                event.key === "i" ||
+                event.key === "I" ||
+                event.key === "d" ||
+                event.key === "D")
+        ) {
+            const tab = currentTab ?? (await chromeService.getCurrentTab());
+            if (!tab) {
+                /* keep event for page */
+            } else if (
+                (event.key === "Delete" || event.key === "Backspace") &&
+                window.getSelection().toString().length === 0 &&
+                !event.repeat
             ) {
-                // "a" for actions — open Tab Menu anytime (not in input)
                 event.preventDefault();
                 event.stopPropagation();
-                tabMenuIsOpen = true;
-            } else if (
-                event.key === "Meta" &&
-                isInNavigationMode &&
-                selectedTab &&
-                !tabMenuIsOpen
-            ) {
+                await tabStore.closeTab(tab.id);
+                await fetchTabInfo();
+            } else if (event.key === "Enter") {
                 event.preventDefault();
-                tabMenuIsOpen = true;
+                event.stopPropagation();
+                await chromeService.createWindowWithTab(tab.id);
+                await tabStore.refreshState();
+                await fetchTabInfo();
             } else if (
-                isPrintableChar &&
-                isInNavigationMode &&
-                !omniboxIsOpen &&
+                (event.key === "c" || event.key === "C") &&
                 window.getSelection().toString().length === 0
             ) {
                 event.preventDefault();
                 event.stopPropagation();
-                omniboxQuery = event.key;
-                omniboxIsOpen = true;
-            } else if (event.key === " ") {
+                const url = await chromeService.copyTabUrl(tab.id);
+                if (url) await navigator.clipboard.writeText(url);
+            } else if (event.key === "r" || event.key === "R") {
                 event.preventDefault();
                 event.stopPropagation();
-                event.stopImmediatePropagation();
-                if (isInNavigationMode && selectedTab) {
-                    chromeService.activateTab(selectedTab.id);
-                    isInNavigationMode = false;
-                    chrome.runtime.sendMessage({
-                        type: "NAVIGATION_MODE",
-                        isInNavigationMode,
-                    });
-                } else {
-                    chrome.runtime.sendMessage({
-                        type: "NAVIGATION_MODE",
-                        isInNavigationMode: !isInNavigationMode,
-                    });
-                }
-            } else if (event.key === "Escape") {
-                if (isInTabSwitchingMode) {
-                    event.preventDefault();
-                    if (tabSwitchingDismissTimeout) {
-                        clearTimeout(tabSwitchingDismissTimeout);
-                        tabSwitchingDismissTimeout = null;
-                    }
-                    isInTabSwitchingMode = false;
-                } else if (showActiveTabInfo) {
-                    event.preventDefault();
+                await chromeService.reloadTab(tab.id);
+            } else if (event.key === "i" || event.key === "I") {
+                event.preventDefault();
+                event.stopPropagation();
+                if (showActiveTabInfo) {
                     hideActiveTabInfo();
+                } else {
+                    showActiveTabInfoForCurrentTab();
                 }
-            } else if (
-                (event.key === "Delete" || event.key === "Backspace") &&
-                isInNavigationMode &&
-                selectedTab
-            ) {
+            } else if (event.key === "d" || event.key === "D") {
+                event.preventDefault();
+                event.stopPropagation();
+                await chromeService.duplicateTab(tab.id);
+                await tabStore.refreshState();
+            }
+        } else if (
+            (event.key === "Delete" || event.key === "Backspace") &&
+            isInNavigationMode &&
+            selectedTab
+        ) {
                 event.preventDefault();
                 event.stopPropagation();
                 const windowsList = [...get(windows)]
@@ -365,6 +511,39 @@
                 selectedTab
             ) {
                 moveSelectedTabToNextWindow(event);
+            } else if (
+                isInNavigationMode &&
+                !tabMenuIsOpen &&
+                !omniboxIsOpen &&
+                !helpMenuIsOpen &&
+                ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+                    event.key,
+                )
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+                const wl = sortedOpenWindows();
+                if (wl.length === 0) return;
+                const win = wl[navCarouselIndex] ?? wl[0];
+                const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
+                const refTab =
+                    selectedTab && selectedTab.windowId === win.id
+                        ? selectedTab
+                        : tabs.find((t) => t.active) ?? tabs[0];
+                if (event.key === "ArrowUp" && tabs.length > 0) {
+                    const cur = tabs.findIndex((t) => t.id === refTab?.id);
+                    const idx = cur >= 0 ? cur : 0;
+                    selectedTab = tabs[Math.max(0, idx - 1)];
+                } else if (event.key === "ArrowDown" && tabs.length > 0) {
+                    const cur = tabs.findIndex((t) => t.id === refTab?.id);
+                    const idx = cur >= 0 ? cur : 0;
+                    selectedTab = tabs[Math.min(tabs.length - 1, idx + 1)];
+                } else if (event.key === "ArrowLeft" && wl.length > 0) {
+                    navCarouselIndex =
+                        (navCarouselIndex - 1 + wl.length) % wl.length;
+                } else if (event.key === "ArrowRight" && wl.length > 0) {
+                    navCarouselIndex = (navCarouselIndex + 1) % wl.length;
+                }
             } else if (
                 ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
                     event.key,
@@ -451,7 +630,6 @@
                     }
                 }
             }
-        }
     }
 
     async function moveSelectedTabToNextWindow(event) {
@@ -495,21 +673,19 @@
     }
 
     function handleWheel(event) {
+        if (tabMenuIsOpen) return;
         if (!isInNavigationMode && !event.metaKey) {
             if (showActiveTabInfo && event.deltaY > 0) {
                 hideActiveTabInfo();
-            } else if (!showActiveTabInfo && event.deltaY < 0 && currentTab) {
-                showActiveTabInfoForCurrentTab();
             }
         }
         if (isInNavigationMode || event.metaKey) {
             let isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);
             if (isVerticalScroll) {
-                // handle vertical scroll for tab navigation
                 handleVerticalTabScroll(event.deltaY);
             } else {
-                // handle horizontal scroll for window navigation
+                handleHorizontalCarouselScroll(event.deltaX);
             }
             event.preventDefault();
             event.stopPropagation();
@@ -520,19 +696,23 @@
 
     let scrollDelta = 0;
     let scrollSelectDelta = 0;
+    let scrollCarouselDelta = 0;
     const SCROLL_SELECT_THRESHOLD = 33;
     let scrollEndTimeout = null;
 
     function handleVerticalTabScroll(scrollUpdate) {
-        if (isInNavigationMode && currentTab) {
-            const windowsList = get(windows) || [];
-            const window = windowsList.find(
-                (w) => w.id === currentTab.windowId,
-            );
-            if (!window?.tabs?.length) return;
+        if (isInNavigationMode) {
+            const wl = sortedOpenWindows();
+            if (!wl.length) return;
+            const win = wl[navCarouselIndex] ?? wl[0];
+            if (!win?.tabs?.length) return;
 
-            const tabs = [...window.tabs].sort((a, b) => a.index - b.index);
-            const refTab = selectedTab || currentTab;
+            const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
+            const refTab =
+                selectedTab && selectedTab.windowId === win.id
+                    ? selectedTab
+                    : tabs.find((t) => t.active) ?? tabs[0];
+            if (!refTab) return;
             const currentIndex = tabs.findIndex((t) => t.id === refTab.id);
             const idx = currentIndex >= 0 ? currentIndex : 0;
 
@@ -551,6 +731,19 @@
                 type: "SCROLL",
                 scrollDelta: scrollUpdate,
             });
+        }
+    }
+
+    function handleHorizontalCarouselScroll(deltaX) {
+        if (!isInNavigationMode) return;
+        const wl = sortedOpenWindows();
+        if (wl.length < 2) return;
+        scrollCarouselDelta += deltaX;
+        if (Math.abs(scrollCarouselDelta) >= SCROLL_SELECT_THRESHOLD) {
+            const step = scrollCarouselDelta > 0 ? 1 : -1;
+            scrollCarouselDelta = 0;
+            navCarouselIndex =
+                (navCarouselIndex + step + wl.length) % wl.length;
         }
     }
 
@@ -590,15 +783,28 @@
         }}
     />
 {/if}
+{#if helpMenuIsOpen}
+    <HelpMenu onClose={() => (helpMenuIsOpen = false)} />
+{/if}
 {#if systemMenuIsOpen}
     <SystemMenu />
 {:else if isInNavigationMode && !tabMenuIsOpen}
-    <TabsView windows={$windows} bind:currentTab bind:selectedTab />
+    {#if !(omniboxOpenedStandalone && omniboxIsOpen)}
+        <TabsView
+            windows={$windows}
+            bind:currentTab
+            bind:selectedTab
+            bind:carouselIndex={navCarouselIndex}
+        />
+    {/if}
     {#if omniboxIsOpen}
         <Omnibox
+            windows={$windows}
+            activeTabId={$activeTabId}
             bind:query={omniboxQuery}
             on:close={() => {
                 omniboxIsOpen = false;
+                omniboxOpenedStandalone = false;
                 omniboxQuery = "";
             }}
         />

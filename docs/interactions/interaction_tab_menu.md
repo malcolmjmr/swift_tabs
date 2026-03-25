@@ -11,8 +11,10 @@
 2. A tab is the target for actions:
    - In Navigation Mode: Currently selected tab
    - Outside Navigation Mode: Currently active tab
-3. Active Tab Info is visible OR Navigation Mode is active
-4. User is not typing in an input field
+3. **Meta key (from Active Tab Info):** Active Tab Info is visible OR Navigation Mode is active.
+4. **Direct "a" / "m" shortcut:** No overlay required; uses the active tab from Chrome.
+5. User is not in a typing context: `input`, `textarea`, `select`, or contenteditable.
+6. For **"a"** / **"m"**: no modifier keys; keyboard shortcuts help panel must be closed.
 
 ---
 
@@ -32,7 +34,7 @@
 
 | Step | User Action | System Response | State Change |
 |------|-------------|-----------------|--------------|
-| 1 | User presses **"a"** key (not in input) | System captures key event | — |
+| 1 | User presses **"a"** or **"m"** (not in typing context; no modifiers) | System captures key event | — |
 | 2 | System identifies current tab | Gets active tab from Chrome API | `currentTab` identified |
 | 3 | Tab Menu appears | Shows with current tab as target | `tabMenuOpen = true` |
 | 4 | User selects action | Action executes | Depends on action |
@@ -93,7 +95,7 @@
 | 😴 | **Sleep** | — | Discard tab (Chrome's native) |
 | 🔍 | **Find** | — | Open find-in-page |
 | 🔇 | **Mute/Unmute** | — | Toggle audio mute |
-| ❌ | **Close** | Delete | Close tab with undo |
+| ❌ | **Close** | Delete / Backspace | **Idle:** close active tab (empty selection). **Nav mode:** close selected tab. Undo when supported |
 
 ---
 
@@ -298,7 +300,7 @@ let submenuStack = []; // For nested submenus
 
 ### Success Metrics
 
-1. Menu opens within 100ms of Meta key or "a" key
+1. Menu opens within 100ms of Meta key, **"a"**, or **"m"**
 2. Basic actions execute within 100ms
 3. Submenu opens within 100ms
 4. Recent actions provide single-tap repeat
@@ -329,3 +331,6 @@ let submenuStack = []; // For nested submenus
 
 **Actions:**
 - `src/services/tabActions.js` - Action execution logic
+
+**Global triggers:**
+- `App.svelte` — **"a"** / **"m"** open Tab Menu; typing-context and modifier guards; coordination with omnibox and `HelpMenu`

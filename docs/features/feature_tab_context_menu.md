@@ -20,9 +20,11 @@ A comprehensive, scrollable menu of tab actions accessible from the Active Tab I
 3. **Trigger Menu:** While the Tab Information Display is visible, pressing the **Meta key** launches the Tab Menu.
 
 **Method 2: Direct Keyboard Shortcut (Any Time)**
-- Press **"a"** (for "actions") while not in a text input element.
+- Press **"a"** (for "actions") or **"m"** (for "menu") while not in a typing context (`input`, `textarea`, `select`, or contenteditable).
+- **No modifier keys** (Ctrl/Alt/Meta/Shift) must be held for these shortcuts.
 - Opens Tab Menu directly without requiring navigation mode or Active Tab Info.
-- Current tab is used as the target for all actions.
+- Current tab is used as the target for all actions (resolved via Chrome if not yet cached).
+- Does not open while the **keyboard shortcuts help** panel is open.
 
 **Method 3: In Navigation Mode (Alternative)**
 - While in navigation mode (TabsView visible), press **"a"** to open Tab Menu for the currently selected tab.
@@ -70,7 +72,7 @@ Single tap/click to execute immediately:
 | 😴 | **Sleep** | Chrome's discard action — frees memory, tab stays in list, reloads on activate | |
 | 🔍 | **Find** | Open find-in-page for current tab | `/` key |
 | 🔇 | **Mute/Unmute** | Toggle audio. Speaker icon visible when tab is playing audio. | |
-| ❌ | **Close** | Close current tab with undo available | Delete/Backspace key |
+| ❌ | **Close** | Close current tab with undo available | **Idle:** Delete or Backspace (empty text selection). **Navigation mode:** Delete/Backspace on selected tab |
 
 ##### Actions with Submenus
 Tap to expand submenu options:
@@ -389,7 +391,7 @@ actions: { basic: [...], submenu: [...], contextual: [...] }
 - `RecentActions.svelte` — Recent section logic
 
 **Integration Points:**
-- Triggered from: `ActiveTabInfo.svelte` (Meta key handler)
+- Triggered from: `ActiveTabInfo.svelte` (Meta key handler); `App.svelte` — **"a"** / **"m"** (and Meta in navigation mode)
 - Uses store: `tabStore` for recent actions persistence
 - Uses service: `chromeApi` for action execution
 
@@ -397,10 +399,10 @@ actions: { basic: [...], submenu: [...], contextual: [...] }
 
 ### Implementation Checklist
 
-- [ ] Create TabMenu.svelte component structure
-- [ ] Implement Recent section with persistence
-- [ ] Implement All Actions section with categories
-- [ ] Create Basic Action components (Pin, Reload, etc.)
+- [x] Create TabMenu.svelte component structure
+- [x] Implement Recent section with persistence
+- [x] Implement All Actions section with categories
+- [x] Create Basic Action components (Pin, Reload, etc.)
 - [ ] Create Submenu system (Save, Move, Close Variants, Appearance)
 - [ ] Implement Save submenu: Save as (Bookmark, File, Entity)
 - [ ] Implement Save submenu: Save to (Folder, Task, Brief)
@@ -408,10 +410,45 @@ actions: { basic: [...], submenu: [...], contextual: [...] }
 - [ ] Implement Close Variants submenu
 - [ ] Implement Appearance submenu
 - [ ] Add contextual actions (Chat, Play, Download)
-- [ ] Add search/filter functionality
-- [ ] Add keyboard navigation (↑↓←→ Enter Space Escape)
-- [ ] Add scroll navigation support
-- [ ] Integrate with Active Tab Info (Meta key trigger)
-- [ ] Persist recent actions to storage
+- [x] Add search/filter functionality
+- [x] Add keyboard navigation (↑↓←→ Enter Space Escape)
+- [x] Add scroll navigation support
+- [x] Integrate with Active Tab Info (Meta key trigger)
+- [x] Direct keyboard open: **"a"** / **"m"** from `App.svelte` (with typing-context and modifier guards)
+- [x] Persist recent actions to storage
 - [ ] Add visual feedback for executed actions
 - [ ] Test submenu nesting (up to 3 levels for Entity types)
+
+---
+
+### Outstanding Items (Deferred to Omnibox)
+
+The following known gaps remain in the Tab Menu and should be addressed before considering Feature 6 complete. Documented here so work can proceed on Omnibox (Feature 9).
+
+#### 1. Scroll-to-Select UX
+**Issue:** Scroll-to-select feels resistant; not smooth enough.  
+**Details:** The current `SCROLL_SELECT_THRESHOLD` (25px) requires too much wheel delta before selection advances. Consider reducing threshold, applying easing, or using a more responsive scroll-to-select model (e.g., rate-based rather than delta-based).  
+**Code:** `TabMenu.svelte` — `handleScrollSelect`, `SCROLL_SELECT_THRESHOLD`, `handleWheel`.
+
+#### 2. Search/Filter Logic
+**Issue:** Typing "close" selects "Create action" first instead of Close.  
+**Details:** The Custom actions section always renders when it has no items, and "Create action" is the sole item. Sections are built in fixed order (quick → save → move → appearance → custom → close), so "Create action" appears before Close when both match. Search should either: (a) hide or rank the Custom section lower when a query exists, (b) sort filtered results by relevance (exact label match first), or (c) exclude "Create action" when it doesn't match the query.  
+**Code:** `TabMenu.svelte` — `flattenedList`, `filterItems`, section iteration order.
+
+#### 3. Space Bar to Execute When Scroll-Selected
+**Issue:** User scrolls (mouse wheel) to select an item, then expects Space to execute it.  
+**Details:** Space may be captured by the search input or scroll the page when focus is elsewhere. Ensure Space executes the selected action when the menu has focus and an item is selected via scroll—independent of whether the search field is focused. Consider: blur search on first scroll-to-select, or handle Space at window level when an item is selected.  
+**Code:** `TabMenu.svelte` — `handleKeydown`, focus management, `svelte:window` keydown.
+
+#### 4. Complicated Menu Actions Not Implemented
+**Issue:** Move, Save, Appearance, and Custom actions are stubs or placeholders.  
+**Details:**
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| **Save** | Stub | Favorite apps, Bookmarks, Database, Tasks — no execution; needs Chrome bookmarks API, file export, task integration. |
+| **Move** | Partial | Only `move_window` (New Window) works. Popup, Group, Reading list, Bookmarks, Database, Task, Time need implementation. |
+| **Appearance** | Stub | Zoom, Font size, Dark mode, Reader mode, Hide elements — no Chrome API calls. |
+| **Custom actions** | Stub | "Create action" placeholder only; needs user-defined action flow and storage. |
+
+**Code:** `TabMenu.svelte` — `executeAction` switch statement; `chromeApi` / Chrome extension APIs for bookmarks, reading list, tab groups, etc.

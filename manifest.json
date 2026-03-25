@@ -5,6 +5,9 @@
     "description": "Tab management with gesture controls",
     "permissions": [
         "tabs",
+        "tabGroups",
+        "bookmarks",
+        "history",
         "storage",
         "scripting"
     ],

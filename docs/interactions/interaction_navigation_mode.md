@@ -22,8 +22,8 @@
 |------|-------------|-----------------|--------------|
 | 1 | User presses **Space** key | System captures event, prevents page scroll | `isInNavigationMode = true` |
 | 2 | System refreshes tab state | Fetches current tabs from Chrome API | `windows` store updated |
-| 3 | TabsView overlay appears | Shows current window's tabs in list view | `TabsView.visible = true` |
-| 4 | Current tab is highlighted | Visual indicator shows active tab | `selectedTab = currentTab` |
+| 3 | TabsView overlay appears | Card at bottom-right: horizontal carousel with **one window’s tabs** visible; dot row below when multiple windows | `TabsView` mounted, `navCarouselIndex` set to current tab’s window |
+| 4 | Current tab is highlighted | Visual indicator for active/selected tab in that window’s list | `selectedTab` aligned with visible window (typically active tab in that window) |
 
 #### Navigation: Selecting Tabs (Vertical)
 
@@ -33,18 +33,19 @@
 | 2 | Scroll threshold reached | Selection moves to previous tab | `selectedTab = tabs[prevIndex]` |
 | 3 | TabsView updates highlight | New selection visually highlighted | UI update |
 | 4 | ActiveTabInfo appears (optional) | Shows detailed info for selected tab | `activeTabInfoVisible = true` |
-| 5 | User continues scrolling | Selection cycles through tabs | `selectedTab` updates |
-| 6 | User reaches first tab | Edge indicator shown, selection stays | Bounce animation |
+| 5 | User continues scrolling | Selection moves through tabs (clamped at ends) | `selectedTab` updates |
+| 6 | User reaches first/last tab | Selection clamps to edge (no wrap) | `selectedTab` stays at boundary |
 
-#### Navigation: Selecting Windows (Horizontal)
+#### Navigation: Selecting Windows (Horizontal carousel)
+
+While in Navigation Mode, horizontal input **only changes which window’s tab list is shown** in TabsView. It does **not** call `focusWindow` or show the Tab Switching Modal. The user switches the real focused window by activating a tab (**Space**) in another window.
 
 | Step | User Action | System Response | State Change |
 |------|-------------|-----------------|--------------|
-| 1 | User scrolls **horizontally** with Meta key | System detects Meta+horizontal scroll | — |
-| 2 | Threshold reached | Focus switches to next/previous window | `activeWindowId` changes |
-| 3 | Chrome focuses new window | Window comes to foreground | Chrome API call |
-| 4 | TabsView updates | Shows tabs in newly focused window | UI refresh |
-| 5 | Tab Switching Modal appears | Brief indicator of window change | `isInTabSwitchingMode = true` |
+| 1 | User scrolls **horizontally** (with Meta, or primary scroll axis horizontal) | `deltaX` accumulates | `scrollCarouselDelta` accumulates |
+| 2 | Threshold reached | Carousel moves to next/previous window | `navCarouselIndex` updates (wrap); TabsView track scrolls to snap |
+| 3 | TabsView updates | New slide shows that window’s tabs; dots reflect active window | `selectedTab` defaults to that window’s active tab (or first tab) |
+| 4 | User may tap a **dot** | Jump to that window’s slide | `navCarouselIndex` = dot index |
 
 #### Activation: Opening Selected Tab
 
@@ -69,9 +70,26 @@
 | Method | User Action | System Response |
 |--------|-------------|-----------------|
 | Activation | Press **Space** | Activate selected tab, exit mode |
-| Escape | Press **Escape** | Exit without activation, return to current tab |
-| Click Outside | Click outside TabsView | Exit without activation |
+| Escape | Press **Escape** | Keyboard shortcuts help closes if open (handled in `App.svelte`). Tab-switching overlay dismisses; Active Tab Info hides. **Omnibox:** Escape closes the omnibox only (navigation mode may remain active). |
+| Click Outside | Click outside `#swift-tabs-root` | Dismisses navigation mode, omnibox, tab menu, system menu, and help (among other overlays) |
 | Omnibox | Type character → Enter | Search/navigate, exit mode |
+
+#### Idle Browsing: Global Shortcuts (Outside Navigation Mode)
+
+When the user is **not** in navigation mode, **not** in the omnibox, **not** in the tab menu, **not** in the tab-switching overlay, **not** in the system menu, and **not** in the keyboard shortcuts help panel — and focus is **not** in a typing context (`input`, `textarea`, `select`, contenteditable) — the following **single-key** shortcuts apply to the **active tab** (no Ctrl/Alt/Meta/Shift except as noted for **?**):
+
+| Key | Action |
+|-----|--------|
+| **/** | Open keyboard shortcuts help (`HelpMenu`) |
+| **?** | Open help (Shift may be used for **?** on layouts where **?** is Shift+/; Ctrl/Alt/Meta must not be held) |
+| **Delete** / **Backspace** | Close active tab if there is no text selection and the key is not a repeat |
+| **Enter** | Move active tab to a **new** window (`createWindowWithTab`) |
+| **c** | Copy active tab URL (only when there is no text selection; otherwise selection copy may apply elsewhere) |
+| **r** | Reload active tab |
+| **i** | Toggle Active Tab Information strip visibility |
+| **d** | Duplicate active tab |
+
+**Related:** [interaction_tab_menu.md](./interaction_tab_menu.md) (**"a"** / **"m"**), omnibox (**"o"** / **"n"**), and help (**/** / **?**) are handled in `App.svelte` with explicit ordering so overlays and modes do not conflict.
 
 ---
 
@@ -109,6 +127,7 @@
 │                              │ └──────────────────┘ │ │
 │                              │ 🔲 Fourth Tab        │ │
 │                              │ 🔲 Fifth Tab         │ │
+│                              │      ● ○ ○           │ │ ← window dots (multi-window)
 │                              └────────────────────────┘ │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
@@ -116,10 +135,10 @@
 
 **Visual characteristics:**
 - Page content dimmed (20% overlay or backdrop blur)
-- TabsView positioned bottom-right (default)
-- Selected tab highlighted with border and background
-- Adjacent tabs visible with subtle styling
-- Scroll or arrows to navigate
+- TabsView **card** fixed bottom-right (`~360px` wide), styling aligned with Active Tab Info / Tab Menu (`--st-*` tokens)
+- **One window visible** at a time; horizontal scroll or dots change window
+- Dot row **below** the tab list (hidden when only one window)
+- Selected tab highlighted; vertical scroll / **↑** **↓** move selection within the **visible** window’s tabs
 
 #### State 3: Navigation Mode with ActiveTabInfo
 ```
@@ -165,33 +184,10 @@
 ### Scroll Thresholds
 
 ```javascript
-// Vertical scroll (tab navigation)
-const VERTICAL_SCROLL_THRESHOLD = 33; // pixels
+// Navigation Mode — App.svelte
+const SCROLL_SELECT_THRESHOLD = 33; // pixels; used for vertical tab steps and horizontal carousel steps
 
-// Horizontal scroll (window navigation)
-const HORIZONTAL_SCROLL_THRESHOLD = 50; // pixels
-
-// Scroll accumulation logic
-let scrollSelectDelta = 0;
-
-function handleWheel(event) {
-  const isVertical = Math.abs(event.deltaY) > Math.abs(event.deltaX);
-  
-  if (isVertical) {
-    scrollSelectDelta += event.deltaY;
-    if (Math.abs(scrollSelectDelta) >= VERTICAL_SCROLL_THRESHOLD) {
-      const direction = scrollSelectDelta > 0 ? -1 : 1; // Up = prev, Down = next
-      navigateTab(direction);
-      scrollSelectDelta = 0;
-    }
-  } else {
-    // Horizontal - navigate windows
-    if (Math.abs(event.deltaX) >= HORIZONTAL_SCROLL_THRESHOLD) {
-      const direction = event.deltaX > 0 ? 1 : -1;
-      navigateWindow(direction);
-    }
-  }
-}
+// scrollSelectDelta — vertical wheel; scrollCarouselDelta — horizontal wheel
 ```
 
 ---
@@ -204,7 +200,7 @@ function handleWheel(event) {
 | Single tab in window | Show that tab, navigation has no effect | — |
 | Chrome API fails | Show error message, allow retry | Refresh page |
 | Text input focused when Space pressed | Space inputs normally, no mode entry | Click outside input first |
-| Meta+scroll not detected (trackpad) | Use arrow keys as fallback | Press ↑ ↓ |
+| Meta+scroll not detected (trackpad) | Use arrow keys as fallback | **↑** **↓** tabs; **←** **→** carousel windows |
 | Window switch fails | Show error, stay in current window | Try again |
 
 ---
@@ -215,20 +211,16 @@ function handleWheel(event) {
 // App.svelte (main state)
 let isInNavigationMode = false;
 let selectedTab = null;
+let navCarouselIndex = 0; // index into sorted open windows (matches TabsView carousel)
 let scrollSelectDelta = 0;
+let scrollCarouselDelta = 0;
 let omniboxIsOpen = false;
 let omniboxQuery = "";
 
-// Derived from stores
-import { windows, currentWindowTabs, activeTabId } from './stores/tabStore';
+import { windows } from './stores/tabStore';
 
-// Reset scroll delta after navigation
-function navigateTab(direction) {
-  const tabs = [...get(currentWindowTabs)].sort((a, b) => a.index - b.index);
-  const currentIndex = tabs.findIndex(t => t.id === selectedTab?.id);
-  const nextIndex = Math.max(0, Math.min(tabs.length - 1, currentIndex + direction));
-  selectedTab = tabs[nextIndex];
-}
+// Vertical scroll: tabs in windowsList[navCarouselIndex], not necessarily Chrome’s focused window
+// Horizontal scroll: step navCarouselIndex with wrap; TabsView binds carouselIndex
 ```
 
 ---
@@ -239,14 +231,21 @@ function navigateTab(direction) {
 |-------|---------|--------|
 | **Space** | Not in input, not in Navigation Mode | Enter Navigation Mode |
 | **Space** | In Navigation Mode | Activate selected tab, exit mode |
-| **Escape** | In Navigation Mode | Exit without activation |
-| **↑ / ↓** | In Navigation Mode | Navigate tabs (prev/next) |
-| **← / →** | In Navigation Mode | Navigate windows (prev/next) |
-| **Meta + Scroll Vertical** | Anywhere in Navigation Mode | Navigate tabs |
-| **Meta + Scroll Horizontal** | Anywhere in Navigation Mode | Navigate windows |
+| **Escape** | Navigation Mode | Does **not** exit Navigation Mode by itself; closes help / tab-switching overlay / Active Tab Info when applicable |
+| **↑ / ↓** | In Navigation Mode (omnibox & tab menu closed) | Move `selectedTab` within tabs of the **carousel-visible** window (clamped, no wrap) |
+| **← / →** | In Navigation Mode (omnibox & tab menu closed) | Step **carousel** to previous/next window (`navCarouselIndex`, wrap); does not `focusWindow` |
+| **Meta + Scroll Vertical** | In Navigation Mode | Same as ↑ / ↓ for the visible window’s tabs |
+| **Meta + Scroll Horizontal** | In Navigation Mode | Step carousel window index (same as ← / →) |
 | **Any printable char** | In Navigation Mode, not in Omnibox | Open Omnibox, type character |
 | **Enter** | In Navigation Mode, tab selected | Move selected tab to next window |
 | **Delete / Backspace** | In Navigation Mode, tab selected | Close selected tab |
+| **Enter** | Idle (see preconditions above) | Move active tab to new window |
+| **Delete / Backspace** | Idle, empty text selection, not repeat | Close active tab |
+| **/** | Idle | Open keyboard shortcuts help |
+| **?** | Idle (Shift allowed for **?**) | Open keyboard shortcuts help |
+| **c** / **r** / **i** / **d** | Idle | Copy URL / reload / toggle Active Tab Info / duplicate (see idle table) |
+| **o** / **n** | Not omnibox/tab menu/help open; not in typing context | Open omnibox (enters navigation mode if needed) |
+| **a** / **m** | Tab target known; tab menu & help closed | Open Tab Menu |
 
 ---
 
@@ -273,7 +272,7 @@ function navigateTab(direction) {
 
 1. Navigation Mode enters within 50ms of Space press
 2. Tab selection responds immediately to scroll (< 50ms perceived)
-3. Window switching completes within 200ms
+3. Carousel window change (scroll, dots, or arrows) updates the visible tab list within one frame / snap
 4. Tab activation (Space) completes within 100ms
 5. User can navigate 20+ tabs without confusion
 6. Exit methods are all reliable and fast
@@ -285,20 +284,22 @@ function navigateTab(direction) {
 - [interaction_tab_switching.md](./interaction_tab_switching.md) - Quick switching without full UI
 - [interaction_tab_info_display.md](./interaction_tab_info_display.md) - Shows during and after Navigation Mode
 - [interaction_tab_menu.md](./interaction_tab_menu.md) - Accessed via Meta key from Navigation Mode
-- [interaction_omnibox.md](./interaction_omnibox.md) - Opened by typing in Navigation Mode
+- [interaction_omnibox.md](./interaction_omnibox.md) - Opened by typing in Navigation Mode (or **o** / **n**)
 
 ---
 
 ### Code References
 
 **Components:**
-- `TabsView.svelte` - Main navigation overlay
+- `src/components/tabs_view/TabsView.svelte` - Navigation overlay (carousel, dots, `bind:carouselIndex`)
+- `src/components/tabs_view/ListView.svelte` (and icon/gallery variants) - Tab list inside each slide
 - `ActiveTabInfo.svelte` - Context display during navigation
 - `Omnibox.svelte` - Search interface
+- `HelpMenu.svelte` - Keyboard shortcuts reference overlay
 
 **Store Integration:**
 - `tabStore.js` - Tab and window data
 - `uiStore.js` - Navigation mode state
 
 **Event Handling:**
-- `App.svelte` - Space key, scroll, and escape handlers
+- `App.svelte` - Space, navigation keys, omnibox/tab menu/help triggers, idle global tab actions, scroll, and escape handlers

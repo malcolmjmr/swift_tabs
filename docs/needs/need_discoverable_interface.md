@@ -1,6 +1,6 @@
 ## Need: Discoverable Interface
 
-**Status:** Planned  
+**Status:** Partially Implemented  
 **Priority:** Low
 
 ---
@@ -20,8 +20,8 @@ When I'm new to Swift Tabs or need a reminder, I want to **learn and recall the 
 ### Current Pain Points (Without Solution)
 
 1. **Hidden Gestures**: Users don't know Meta-scroll is available without being told.
-2. **Undiscoverable Keys**: No way to know that `Space` triggers navigation mode or `/` opens find.
-3. **No In-App Help**: Must leave the browser to learn how to use the extension.
+2. **Undiscoverable Keys**: Easy to miss that `Space` triggers navigation mode; **/** and **?** now open an in-page shortcuts panel when idle (`HelpMenu.svelte`), but find-in-page (**/** in nav mode) remains planned and may overlap conceptually.
+3. **No In-App Help**: Partially addressed by the keyboard shortcuts overlay; first-run onboarding still absent.
 
 ---
 
@@ -54,14 +54,14 @@ When I'm new to Swift Tabs or need a reminder, I want to **learn and recall the 
 ### Related Features
 
 - Feature: Onboarding Overlay (planned)
-- Feature: Help Overlay (planned)
+- Feature: Keyboard shortcuts help overlay (**/** / **?** when idle) — implemented in `HelpMenu.svelte` / `App.svelte`
 - Feature: Active Tab Information (Meta symbol affordance)
 
 ---
 
 ### Notes
 
-This need is intentionally **deferred** for later implementation. The core Swift Tabs experience (gestures, keyboard modes) should be stable before investing in onboarding infrastructure.
+**Onboarding** remains deferred. **Contextual help** (shortcuts panel) is available while browsing; full first-run and mode-specific hints are still future work.
 
 When implemented, should follow the same ergonomic principles: minimal interruption, single-key access, dismissible without friction.
 

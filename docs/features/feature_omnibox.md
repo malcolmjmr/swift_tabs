@@ -1,6 +1,6 @@
 ## Feature: Omnibox with Tab Search
 
-**Status:** Partially Implemented
+**Status:** Implemented
 **Priority:** High
 **Addresses Need:** Efficient Tab Navigation (Need 1), Tab Management (Need 3)
 
@@ -14,8 +14,10 @@ A unified search interface with tabbed sections for different search scopes. App
 
 ### Trigger
 
-- Press **"o"** while not in a text input element.
-- Type any printable character while in navigation mode (e.g., while Active Tab Info or Overview is visible).
+- Press **"o"** or **"n"** while **not** in a typing context (`input`, `textarea`, `select`, contenteditable), with **no modifier keys** (Ctrl/Alt/Meta/Shift).
+- If navigation mode is not already active, **"o"** / **"n"** **enter navigation mode** and open the omnibox with an empty query.
+- Opening is **suppressed** while the tab menu or keyboard shortcuts help panel is open.
+- **In navigation mode:** type any printable character (with no modifiers, no text selection, and help closed) to open the omnibox and seed the query with that character.
 - Omnibox appears with the focus ready for input.
 
 ---
@@ -269,12 +271,12 @@ User vertical scrolls to select
 - [x] URL detection and navigation
 - [x] Search query handling
 - [x] Escape to close
-- [x] Trigger by "o" key
-- [ ] Tabbed section navigation (horizontal scroll)
-- [ ] Tabs section (search open tabs)
-- [ ] Groups section (search tab groups)
-- [ ] Bookmarks section
-- [ ] History section
-- [ ] Vertical scroll for results
-- [ ] Direct tab activation (switch vs new tab)
-- [ ] Direct group activation
+- [x] Trigger by "o" key (also when not in nav mode)
+- [x] Tabbed section navigation (horizontal scroll / ←→ keys)
+- [x] Tabs section (search open tabs)
+- [x] Groups section (search tab groups)
+- [x] Bookmarks section
+- [x] History section
+- [x] Vertical scroll for results (↑↓ keys)
+- [x] Direct tab activation (switch vs new tab)
+- [x] Direct group activation

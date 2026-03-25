@@ -61,32 +61,34 @@ User in navigation mode viewing Window 1 tabs
 
 #### Mode 2: Outside Navigation Mode (Immediate Move)
 
-**Use Case:** User wants to move the current tab to a new window without entering full navigation mode.
+**Use Case:** User wants to move the current tab to a new window without using Enter inside navigation mode’s “next window” behavior.
 
-**Flow:**
-1. Active Tab Info is showing (appears on navigation or scroll up)
-2. Press **Shift+Enter**
-3. New window created immediately, current tab moved there
+**Implemented flow (idle global shortcuts in `App.svelte`):**
+1. User is in **idle** context: not in navigation mode, omnibox, tab menu, tab-switching overlay, system menu, or keyboard help; not focused in a typing context.
+2. Press **Enter** (no modifiers).
+3. **`chromeService.createWindowWithTab(activeTabId)`** runs; tab store refreshes.
 
-**No Dialog:** The action executes immediately. The user sees brief visual feedback (window flash or indicator) and the Active Tab Info updates to show the new context.
+**Earlier spec (superseded for this path):** Shift+Enter from Active Tab Info — not implemented as of the idle **Enter** shortcut above.
+
+**No Dialog:** The action executes immediately.
 
 ---
 
-### Current vs Intended Implementation
+### Current vs Intended Implementation (Navigation Mode Batch)
 
-**Current (needs update):**
+**Current behavior in navigation mode:**
 ```javascript
-// In App.svelte
+// In App.svelte — Enter while in navigation mode
 } else if (
     event.key === "Enter" &&
     isInNavigationMode &&
     selectedTab
 ) {
-    moveSelectedTabToNextWindow(event);  // ← Moves to EXISTING window, not new
+    moveSelectedTabToNextWindow(event);  // Moves to *next* existing window (wraps)
 }
 ```
 
-**Intended:**
+**Intended (batch new-window context — still TBD):**
 ```javascript
 // Track new window creation state
 let newWindowCreated = null; // Stores window ID of recently created window

@@ -91,5 +91,17 @@ export const chromeService = {
 
     async closeTabsToRight(tabId) {
         return this.sendMessage('CLOSE_TABS_TO_RIGHT', { tabId });
+    },
+
+    async searchBookmarks(query) {
+        return this.sendMessage('SEARCH_BOOKMARKS', { query });
+    },
+
+    async searchHistory(query) {
+        return this.sendMessage('SEARCH_HISTORY', { query });
+    },
+
+    async getTabGroups() {
+        return this.sendMessage('GET_TAB_GROUPS');
     }
 };

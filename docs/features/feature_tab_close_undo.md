@@ -8,7 +8,9 @@
 
 ### Description
 
-Any tab close action (Delete key in navigation mode, Close from Tab Menu, or Close Variants) provides a temporary undo option. This safety net prevents accidental data loss while maintaining efficient workflows.
+Any tab close action (**Delete/Backspace** in navigation mode or **idle** browsing when selection is empty, Close from Tab Menu, or Close Variants) should provide a temporary undo option. This safety net prevents accidental data loss while maintaining efficient workflows.
+
+**Current implementation:** `tabStore.closeTab` is used for both navigation-mode and idle closes; dedicated undo UI described below is **not** yet wired for all paths.
 
 **Note:** This is not a separate close gesture — it's an undo system that applies to all close actions.
 
@@ -18,6 +20,7 @@ Any tab close action (Delete key in navigation mode, Close from Tab Menu, or Clo
 
 Undo is available after:
 - **Delete/Backspace key** in navigation mode (closes selected tab)
+- **Delete/Backspace key** while idle (closes active tab when there is no text selection and the key is not auto-repeating)
 - **Close** action from Tab Menu (basic action)
 - **Close Others** or **Close to the Right** from Tab Menu submenu
 

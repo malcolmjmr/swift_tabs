@@ -19,10 +19,10 @@ This document catalogs the features that address the user needs. Each feature is
 | 3 | Windows Overview | Tab Context Awareness (Need 2), Tab Management (Need 3), Window and Group Management (Need 4) | Partially Implemented | High |
 | 4 | New Window Creation | Window and Group Management (Need 4) | Implemented | Medium |
 | 5 | Move to New Window | Window and Group Management (Need 4), Tab Management (Need 3) | Partially Implemented | Medium |
-| 6 | Tab Menu (Actions) | Tab Management (Need 3), Task Management (Need 12) | Planned | High |
+| 6 | Tab Menu (Actions) | Tab Management (Need 3), Task Management (Need 12) | Partially Implemented | High |
 | 7 | Tab Close with Undo | Quick Recovery (Need 5), Tab Management (Need 3) | Planned | Medium |
 | 8 | Tab Reorder with Scroll | Tab Management (Need 3) | Planned | Medium |
-| 9 | Omnibox with Tab Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3), Suggestions & Assistance (Need 13) | Partially Implemented | High |
+| 9 | Omnibox with Tab Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3), Suggestions & Assistance (Need 13) | Implemented | High |
 | 10 | Find in Page | Find in Page (Need 10) | Planned | Medium |
 | 11 | Container Actions Menu | Window and Group Management (Need 4), Tab Management (Need 3) | Planned | High |
 
@@ -50,12 +50,12 @@ This document catalogs the features that address the user needs. Each feature is
 ```
 Core Foundation Features (Implemented)
 ├─ Active Tab Information Display [1]
-│  └─ Tab Menu [6] (Meta or "a" key, with Recent section)
+│  └─ Tab Menu [6] (Meta or "a"/"m" key, with Recent section)
 │
 ├─ Gesture-Based Tab Navigation [2]
 │  ├─ Meta+Vertical: Navigate tabs in container
 │  ├─ Meta+Horizontal: Navigate containers (windows/groups)
-│  └─ Omnibox [9] (typing in nav mode, or "o" key)
+│  └─ Omnibox [9] (typing in nav mode, or "o"/"n" key)
 │
 └─ Windows Overview [3]
    ├─ Container list (windows + tab groups as peers)
@@ -76,7 +76,7 @@ Tab Management Features (Planned/In Progress)
 │  └─ Assistance (Summarize, Translate, Explain — future)
 │
 ├─ Tab Close with Undo [7]
-│  ├─ Delete key in nav mode (with undo)
+│  ├─ Delete/Backspace in nav mode or idle (with undo when implemented)
 │  ├─ Close from Tab Menu (with undo)
 │  └─ Stack up to 5 recent closes
 │
@@ -85,8 +85,8 @@ Tab Management Features (Planned/In Progress)
 │  └─ Alt+Scroll Horizontal: Move to different window
 │
 └─ Move to New Window [5]
-   ├─ In Nav Mode: Enter (first = create, subsequent = same window)
-   └─ Outside Nav Mode: Shift+Enter from Active Tab Info
+   ├─ In Nav Mode: Enter (moves to next window — batch new-window flow still TBD)
+   └─ Outside Nav Mode: Enter when idle (no overlays) moves active tab to a new window
 
 Window/Container Management Features
 ├─ Container Actions Menu [11]
@@ -109,7 +109,7 @@ Extended Features
 │  ├─ URL/search input
 │  └─ Suggestions [107] — Next steps within current task/activity
 │
-├─ Find in Page [10] ("/" key)
+├─ Find in Page [10] ("/" in nav mode when implemented; idle "/" opens shortcuts help today)
 │
 └─ Enhancement Tier (100-series)
    ├─ AI-Required Features
@@ -135,14 +135,14 @@ Extended Features
 
 ### Partially Implemented
 - **Windows Overview**: Basic structure with header (tab/window counts) and footer ([+] [⚙] [←] buttons); vertical scroll to select containers; Space/Enter to navigate; needs tab group integration, group row with Chrome colors, favicon hover titles.
-- **Omnibox**: URL/search input; triggered by "o" key or typing in nav mode; needs tabbed sections (Tabs, Groups, Bookmarks, History), horizontal scroll for section switching, vertical scroll for item navigation.
-- **Move to New Window**: Enter key moves to next existing window; needs update: Enter creates new window on first press, Shift+Enter outside nav mode.
-- **Tab Menu**: Not implemented; needs "a" key shortcut, Meta key from Active Tab Info, Recent section, Basic Actions, and Submenus.
+- **Omnibox**: Implemented. Tabbed sections (Tabs, Groups, Bookmarks, History); horizontal scroll/←→ for sections; vertical ↑↓ for results; **"o"** / **"n"** (including when not in nav mode — enters nav mode first); direct tab/group activation; bookmark/history open in new tab.
+- **Move to New Window**: Enter in navigation mode moves selected tab to the **next** window (`moveSelectedTabToNextWindow`). **Idle Enter** moves the **active** tab to a **new** window. Batch "first Enter creates window, later Enter same window" still TBD.
+- **Tab Menu**: Partially implemented. **"a"** / **"m"** keys, Meta key, Recent section, Basic Actions (Pin, Reload, Duplicate, Copy, Sleep, Find, Close), some Move/Close variants. **Keyboard shortcuts help:** **/** or **?** when idle (`HelpMenu.svelte`). Outstanding: scroll UX, search ranking, Space-to-execute, Move/Save/Appearance/Custom submenus (see feature_tab_context_menu.md § Outstanding Items).
 
 ### Planned Features
 
 **Core Features:**
-- **Tab Menu [6]**: Complete action hub triggered by "a" key or Meta key from Active Tab Info; Recent section; Basic Actions (Pin, Reload, Duplicate, Copy, Sleep, Find, Mute, Close); Submenus with sections:
+- **Tab Menu [6]**: Complete action hub triggered by **"a"** / **"m"** or Meta key from Active Tab Info; Recent section; Basic Actions (Pin, Reload, Duplicate, Copy, Sleep, Find, Mute, Close); Submenus with sections:
   - **Save**: Bookmark, File, Entity; to Folder, Task [12], Brief [11]
   - **Move**: New Window, Existing, Groups, Reading List, Bookmarks, Schedule [12]
   - **Close Variants**: Others, To Right

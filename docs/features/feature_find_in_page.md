@@ -25,9 +25,11 @@ Users want to stay in the Swift Tabs navigation mindset while finding content.
 
 ### Trigger
 
-**From Navigation Mode:**
+**From Navigation Mode (planned — not implemented as described here):**
 - Press `/` (like Vim, less, man pages)
 - Alternative: Press `f` (for "find")
+
+**Implementation note (today):** While **idle** (outside navigation mode and other overlays), **/** opens the **keyboard shortcuts help** panel, not find-in-page. When this feature ships, `/` in **navigation mode** should open find; idle `/` may remain help-only or be reconciled in product spec.
 
 **Opens:** Find bar overlay at top of page
 

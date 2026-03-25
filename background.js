@@ -271,8 +271,65 @@ const chromeApiHandlers = {
         }
         broadcastTabsDataChanged();
         return { success: true };
+    },
+
+    async SEARCH_BOOKMARKS({ query }) {
+
+        const results = await chrome.bookmarks.search({ query: query.trim() });
+        return results
+            .filter((b) => b.url)
+            .slice(0, 50)
+            .map((b) => ({
+                id: b.id,
+                title: b.title || extractDomain(b.url),
+                url: b.url,
+                type: "bookmark",
+            }));
+    },
+
+    async SEARCH_HISTORY({ query }) {
+
+        const results = await chrome.history.search({
+            text: query.trim(),
+            maxResults: 50,
+        });
+        return results.map((r) => ({
+            id: r.id,
+            title: r.title || extractDomain(r.url),
+            url: r.url,
+            type: "history",
+        }));
+    },
+
+    async GET_TAB_GROUPS() {
+        const groups = await chrome.tabGroups.query({});
+        const windows = await chrome.windows.getAll({ populate: true });
+        return groups.map((g) => {
+            const window = windows.find((w) => w.id === g.windowId);
+            const groupTabs = (window?.tabs || []).filter(
+                (t) => t.groupId === g.id
+            );
+            const firstTab = groupTabs.sort((a, b) => a.index - b.index)[0];
+            return {
+                id: g.id,
+                title: g.title || "(Untitled)",
+                color: g.color,
+                windowId: g.windowId,
+                tabCount: groupTabs.length,
+                firstTabId: firstTab?.id,
+                type: "group",
+            };
+        });
     }
 };
+
+function extractDomain(url) {
+    try {
+        return new URL(url).hostname;
+    } catch (e) {
+        return url;
+    }
+}
 
 
 

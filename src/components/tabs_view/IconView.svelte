@@ -1,28 +1,34 @@
 <script>
-    import { onMount } from "svelte";
     export let tabs;
-    export let currentTab;
-    export let selectedTab;
-    onMount(() => {
-        tabs.sort((a, b) => b.index - a.index);
-    });
+    export let currentTab = null;
+    export let selectedTab = null;
+
+    $: displayTabs = [...(tabs || [])].sort((a, b) => b.index - a.index);
 </script>
 
 <div class="icon-view">
     <div class="icon-view-container">
-        {#each tabs as tab (tab.id)}
+        {#each displayTabs as tab (tab.id)}
             <div
                 class="icon-view-item"
-                class:active={tab.id === currentTab.id}
-                class:selected={tab.id === selectedTab.id}
+                role="button"
+                tabindex="-1"
+                class:active={currentTab != null && tab.id === currentTab.id}
+                class:selected={selectedTab != null && tab.id === selectedTab.id}
                 on:mouseenter={() => (selectedTab = tab)}
                 on:mouseleave={() => {}}
             >
-                <img
-                    src={tab.favIconUrl}
-                    alt={tab.title}
-                    class="icon-view-item-icon"
-                />
+                {#if tab.favIconUrl}
+                    <img
+                        src={tab.favIconUrl}
+                        alt=""
+                        class="icon-view-item-icon"
+                    />
+                {:else}
+                    <span class="icon-fallback"
+                        >{(tab.title || "?").charAt(0).toUpperCase()}</span
+                    >
+                {/if}
             </div>
         {/each}
     </div>
@@ -32,52 +38,57 @@
     .icon-view {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
+        width: 100%;
     }
+
     .icon-view-container {
         display: flex;
         flex-wrap: wrap-reverse;
         align-items: center;
         justify-content: flex-start;
-        margin: 8px 0px;
-        gap: 10px 16px;
-        padding-left: 12px;
+        margin: 0;
+        gap: 10px 12px;
+        padding: 4px 0;
         width: 100%;
-        height: 100%;
     }
+
     .icon-view-item {
         display: flex;
         flex-direction: row;
         align-items: center;
         justify-content: center;
-        gap: 10px;
-
         border-radius: 8px;
-        transition: background-color 0.2s;
+        transition:
+            background 0.15s,
+            opacity 0.15s;
         min-height: 40px;
         min-width: 40px;
         height: 40px;
         width: 40px;
-        max-height: 40px;
-        max-width: 40px;
-        background-color: #555;
-        opacity: 0.7;
-
-        /* background-color: #333; */
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
+        opacity: 0.75;
     }
+
     .icon-view-item-icon {
         height: 24px;
         width: 24px;
-
         object-fit: contain;
     }
+
+    .icon-fallback {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--st-text-muted, #808080);
+    }
+
     .icon-view-item.active {
-        border: 1px solid #999;
-        border-radius: 8px;
+        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.25));
         opacity: 0.95;
     }
+
     .icon-view-item.selected {
-        background-color: #555;
-        opacity: 0.95;
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.12));
+        opacity: 1;
     }
 </style>

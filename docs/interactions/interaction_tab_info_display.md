@@ -23,21 +23,31 @@
 | 1 | User switches to tab OR page finishes loading | Chrome runtime message sent to content script | `currentTab` updated in store |
 | 2 | Content script receives "TAB_ACTIVATED" or "TAB_UPDATED" (for this tab) | ActiveTabInfo component prepares to display | `showActiveTabInfo = true` |
 | 3 | System checks scroll position | If user has not scrolled down, show info | `isVisible = true` |
-| 4 | Info overlay fades in | Displays favicon, title, URL, action hints | Animation: 150ms fade-in |
-| 5 | Auto-dismiss timer starts (3 seconds) | If no interaction, info will hide | `dismissTimeout` set |
-| 6 | User scrolls down OR timeout expires | Info overlay fades out | `isVisible = false` |
+| 4 | Info overlay fades in | Displays favicon, title, URL, nav icons, audio indicator | Animation: 150ms fade-in |
+| 5 | User scrolls down OR clicks outside | Info overlay fades out | `isVisible = false` |
 
 **Note:** ActiveTabInfo is **not** shown in Navigation Mode.
 
-#### Dismiss Behaviors
+#### Trigger Method 2: SPA Navigation Detection
+
+| Step | User Action | System Response | State Change |
+|------|-------------|-----------------|--------------|
+| 1 | User clicks on SPA link/button | Click detected by content script | — |
+| 2 | SPA updates page content and title | After 100ms delay, title change detected | `document.title !== lastDocumentTitle` |
+| 3 | Title change confirmed | Update `lastDocumentTitle`, trigger info display | `showActiveTabInfo = true` |
+| 4 | Info overlay fades in | Show updated tab information | Animation: 150ms fade-in |
+
+**Note:** This detection method handles Single Page Apps (SPAs) that use `history.pushState()` without full page reloads.
+
+---
+
+### Dismiss Behaviors
 
 | User Action | System Response | Timing |
 |-------------|-----------------|--------|
 | Scroll down (deltaY > 0) | Fade out info overlay | Immediate |
-| Scroll up (deltaY < 0) | Keep info visible / re-show if hidden | — |
 | Click outside info overlay | Fade out info | Immediate |
 | Press Escape | Fade out info | Immediate |
-| Timeout (no interaction) | Auto-fade out | 3000ms |
 | Page navigation starts | Hide immediately | Immediate |
 
 ---
@@ -53,9 +63,7 @@
 ```
 ┌─────────────────────────────────────────┐
 │  [🔲 Favicon]  Page Title Goes Here     │
-│  https://example.com/page-path          │
-│                                         │
-│  [Hold ⌘ for actions]                   │
+│  ← → example.com                🔊      │
 └─────────────────────────────────────────┘
 ```
 
@@ -64,26 +72,50 @@
 **Contents:**
 - Favicon (16x16px)
 - Tab title (truncated with ellipsis if long)
+- Navigation arrows (← →) shown when back/forward navigation is possible
 - URL (truncated, lighter color)
-- Meta key hint (⌘ on Mac, ⊞ on Windows/Linux)
+- Audio icon (🔊) shown when tab is playing audio
 
 ---
 
 ### Scroll Detection Logic
 
 ```javascript
-// Dismiss on scroll down
+// Dismiss on scroll down only
 function handleScroll(event) {
   if (event.deltaY > SCROLL_DOWN_THRESHOLD) {
     // User scrolled down - dismiss info
     hideActiveTabInfo();
-  } else if (event.deltaY < 0 && !isVisible) {
-    // User scrolled up - optionally re-show
-    showActiveTabInfo();
   }
+  // Note: Scroll up does NOT re-show the info
 }
 
 const SCROLL_DOWN_THRESHOLD = 50; // pixels
+```
+
+---
+
+### SPA Navigation Detection
+
+```javascript
+// Detect SPA navigation via document title change
+let lastDocumentTitle = "";
+
+// Initialize when tab info is fetched
+function fetchTabInfo() {
+  lastDocumentTitle = document.title;
+  // ... fetch tab data
+}
+
+// Check for title change on any click
+function handleClick() {
+  setTimeout(() => {
+    if (document.title !== lastDocumentTitle) {
+      lastDocumentTitle = document.title;
+      showActiveTabInfoForCurrentTab();
+    }
+  }, 100); // Short delay for SPA to update title
+}
 ```
 
 ---
@@ -97,21 +129,20 @@ const SCROLL_DOWN_THRESHOLD = 50; // pixels
 | URL is extremely long | Truncate with middle-ellipsis | Hover to see full URL (future) |
 | Extension just installed | No existing tab data | Info shows on next tab switch |
 | Chrome API fails | Log error, don't show info | Reload extension |
+| SPA navigation missed | No title change detected | N/A (best-effort detection) |
 
 ---
 
 ### State Management
 
 ```javascript
-// Component State (ActiveTabInfo.svelte)
-let isVisible = false;
+// Component State (App.svelte)
+let showActiveTabInfo = false;
 let currentTab = null;
-let dismissTimeout = null;
-const AUTO_DISMISS_MS = 3000;
+let lastDocumentTitle = "";
 
-// Props
-export let tab; // Tab object with id, title, url, favIconUrl
-export let mode = 'auto'; // 'auto' | 'navigation'
+// Props passed to ActiveTabInfo
+export let tab; // Tab object with id, title, url, favIconUrl, audible, canGoBack, canGoForward
 
 // Store Integration
 import { currentWindowTabs, activeTabId } from '../stores/tabStore';
@@ -130,15 +161,10 @@ import { currentWindowTabs, activeTabId } from '../stores/tabStore';
 }
 
 {
-  type: "NAVIGATION_COMPLETE",
+  type: "TAB_UPDATED",
   tabId: number,
-  url: string,
-  title: string
-}
-
-// Sent to dismiss info
-{
-  type: "DISMISS_ACTIVE_TAB_INFO"
+  changeInfo: object,
+  tab: Tab
 }
 ```
 
@@ -161,9 +187,10 @@ import { currentWindowTabs, activeTabId } from '../stores/tabStore';
 ### Accessibility Considerations
 
 - Info overlay has `aria-live="polite"` for screen readers
-- Meta key symbol uses platform-appropriate text (⌘ vs ⊞)
+- Navigation arrows have descriptive titles ("Can go back", "Can go forward")
+- Audio icon has descriptive title ("Audio playing")
 - Info is purely contextual and doesn't block content interaction
-- Dismiss methods are multiple (scroll, click, Escape, timeout)
+- Dismiss methods are multiple (scroll, click, Escape)
 
 ---
 
@@ -172,15 +199,17 @@ import { currentWindowTabs, activeTabId } from '../stores/tabStore';
 1. Info appears within 100ms of tab activation
 2. Info dismisses immediately on scroll down (< 50ms)
 3. Info does NOT appear if user has already scrolled down
-4. Meta key hint is visible and recognizable
-5. Info does not interfere with page scrolling or clicking
+4. Navigation arrows accurately reflect back/forward state
+5. Audio icon appears when tab is playing audio
+6. SPA navigation detection works for common frameworks (React, Vue, etc.)
+7. Info does not interfere with page scrolling or clicking
 
 ---
 
 ### Related Interactions
 
 - [interaction_tab_switching.md](./interaction_tab_switching.md) - Precedes info display
-- [interaction_tab_menu.md](./interaction_tab_menu.md) - Triggered by Meta key from info display
+- [interaction_tab_menu.md](./interaction_tab_menu.md) - Tab menu for actions
 
 ---
 
@@ -188,7 +217,7 @@ import { currentWindowTabs, activeTabId } from '../stores/tabStore';
 
 **Components:**
 - `ActiveTabInfo.svelte` - Main info overlay
-- `App.svelte` - Event handling and visibility control
+- `App.svelte` - Event handling, visibility control, and SPA detection
 
 **Store Integration:**
 - `tabStore.js` - Current tab data

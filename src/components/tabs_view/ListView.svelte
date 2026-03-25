@@ -1,7 +1,7 @@
 <script>
     export let tabs;
-    export let currentTab;
-    export let selectedTab;
+    export let currentTab = null;
+    export let selectedTab = null;
 </script>
 
 <div class="list-view">
@@ -9,14 +9,20 @@
         {#each tabs as tab (tab.id)}
             <div
                 class="list-view-item"
-                class:active={tab.id === currentTab.id}
-                class:selected={tab.id === selectedTab.id}
+                class:active={currentTab != null && tab.id === currentTab.id}
+                class:selected={selectedTab != null && tab.id === selectedTab.id}
             >
-                <img
-                    src={tab.favIconUrl}
-                    alt={tab.title}
-                    class="list-view-item-icon"
-                />
+                {#if tab.favIconUrl}
+                    <img
+                        src={tab.favIconUrl}
+                        alt=""
+                        class="list-view-item-icon"
+                    />
+                {:else}
+                    <span class="list-view-item-icon-fallback" aria-hidden="true"
+                        >{(tab.title || "?").charAt(0).toUpperCase()}</span
+                    >
+                {/if}
                 <div class="list-view-item-title">{tab.title}</div>
             </div>
         {/each}
@@ -27,67 +33,76 @@
     .list-view {
         display: flex;
         flex-direction: column;
-
-        width: 250px;
-        padding: 8px;
-        border-radius: 8px;
-        background-color: #333;
+        width: 100%;
+        padding: 0;
+        border-radius: 6px;
+        background: transparent;
         font-size: 14px;
-        font-family: system-ui;
+        font-family: system-ui, -apple-system, sans-serif;
     }
+
     .list-view-container {
         display: flex;
         flex-direction: column;
-        gap: 5px;
+        gap: 2px;
     }
+
     .list-view-item {
         display: flex;
         flex-direction: row;
         align-items: center;
-        justify-content: start;
-        gap: 8px;
-        padding: 5px;
-        border-radius: 8px;
-        max-height: 30px;
-        margin: 0px;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 6px;
+        margin: 0;
+        transition: background 0.1s;
+        width: 100%;
+        box-sizing: border-box;
+        cursor: default;
+        color: var(--st-text-primary, #ffffff);
+    }
 
-        transition: background-color 0.2s;
-        width: calc(100% - 10px);
-        cursor: pointer;
-        color: white;
-    }
     .list-view-item:hover {
-        background-color: #222;
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
     }
+
     .list-view-item.active {
-        background-color: #333;
+        background: transparent;
     }
 
     .list-view-item.selected {
-        background-color: #444;
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
     }
 
-    .list-view-item-icon {
+    .list-view-item-icon,
+    .list-view-item-icon-fallback {
         max-width: 24px;
         max-height: 24px;
-        border-radius: 8px;
-        margin: 0px;
+        min-width: 24px;
+        min-height: 24px;
+        border-radius: 4px;
+        margin: 0;
+        flex-shrink: 0;
+        object-fit: contain;
     }
-    .list-view-item-icon:hover {
-        background-color: #555;
+
+    .list-view-item-icon-fallback {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--st-text-muted, #808080);
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
     }
-    .list-view-item-icon:active {
-        background-color: #777;
-    }
-    .list-view-item-icon:focus {
-        background-color: #999;
-    }
-    .list-view-item-title,
-    .list-view-item-url {
+
+    .list-view-item-title {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        max-width: 100%;
-        text-align: center;
+        min-width: 0;
+        flex: 1;
+        text-align: left;
     }
 </style>

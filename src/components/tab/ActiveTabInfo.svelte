@@ -1,10 +1,5 @@
 <script>
-    import { createEventDispatcher } from "svelte";
-
     export let tab = null;
-    export let mode = "auto"; // 'auto' | 'navigation'
-
-    const dispatch = createEventDispatcher();
 
     let faviconFailed = false;
     let lastTabId = null;
@@ -12,11 +7,6 @@
         lastTabId = tab?.id;
         faviconFailed = false;
     }
-
-    const metaKeySymbol =
-        typeof navigator !== "undefined" && navigator.platform?.includes("Mac")
-            ? "⌘"
-            : "⊞";
 
     $: displayTitle = tab?.title || "Untitled";
     $: displayHostname = tab?.url
@@ -28,29 +18,10 @@
               }
           })()
         : "";
-    $: hintText =
-        mode === "navigation"
-            ? `Space: Activate · ${metaKeySymbol}: Menu`
-            : `Hold ${metaKeySymbol} for menu`;
-
-    function handleKeydown(event) {
-        const notInInput =
-            !document.activeElement?.matches("input, textarea") &&
-            !document.activeElement?.isContentEditable;
-        if (
-            notInInput &&
-            event.key === "Meta" &&
-            !event.ctrlKey &&
-            !event.altKey &&
-            !event.shiftKey
-        ) {
-            event.preventDefault();
-            dispatch("menuRequest");
-        }
-    }
+    $: canGoBack = tab?.canGoBack ?? false;
+    $: canGoForward = tab?.canGoForward ?? false;
+    $: isAudible = tab?.audible ?? false;
 </script>
-
-<svelte:window on:keydown={handleKeydown} />
 
 {#if tab}
     <div class="active-tab-info" role="status" aria-live="polite">
@@ -75,8 +46,10 @@
             <div class="column">
                 <span class="title" title={tab.title}>{displayTitle}</span>
                 <div class="row url-hint-row">
+                    {#if canGoBack}<span class="nav-icon" title="Can go back">←</span>{/if}
+                    {#if canGoForward}<span class="nav-icon" title="Can go forward">→</span>{/if}
                     <span class="url" title={tab.url}>{displayHostname}</span>
-                    <span class="hint">{hintText}</span>
+                    {#if isAudible}<span class="audio-icon" title="Audio playing">🔊</span>{/if}
                 </div>
             </div>
         </div>
@@ -98,6 +71,7 @@
         border-radius: 8px;
         border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        font-family: system-ui;
     }
 
     .row {
@@ -182,11 +156,18 @@
         min-width: 0;
     }
 
-    .hint {
-        font-size: 11px;
+    .nav-icon {
+        font-size: 12px;
         color: var(--st-text-muted, #808080);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
         flex-shrink: 0;
+        user-select: none;
+    }
+
+    .audio-icon {
+        font-size: 12px;
+        color: var(--st-text-muted, #808080);
+        flex-shrink: 0;
+        margin-left: 8px;
+        user-select: none;
     }
 </style>
