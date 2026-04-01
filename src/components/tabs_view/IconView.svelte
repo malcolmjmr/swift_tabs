@@ -1,9 +1,23 @@
 <script>
+    import { createEventDispatcher } from "svelte";
+
     export let tabs;
     export let currentTab = null;
     export let selectedTab = null;
 
+    const dispatch = createEventDispatcher();
+
     $: displayTabs = [...(tabs || [])].sort((a, b) => b.index - a.index);
+
+    function pickTab(tab) {
+        selectedTab = tab;
+        dispatch("pick");
+    }
+
+    function activateTab(tab) {
+        pickTab(tab);
+        dispatch("activatetab", { tab });
+    }
 </script>
 
 <div class="icon-view">
@@ -15,8 +29,14 @@
                 tabindex="-1"
                 class:active={currentTab != null && tab.id === currentTab.id}
                 class:selected={selectedTab != null && tab.id === selectedTab.id}
-                on:mouseenter={() => (selectedTab = tab)}
-                on:mouseleave={() => {}}
+                on:mouseenter={() => pickTab(tab)}
+                on:click={() => activateTab(tab)}
+                on:keydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        activateTab(tab);
+                    }
+                }}
             >
                 {#if tab.favIconUrl}
                     <img
@@ -79,7 +99,7 @@
     .icon-fallback {
         font-size: 14px;
         font-weight: 600;
-        color: var(--st-text-muted, #808080);
+        color: #ffffff;
     }
 
     .icon-view-item.active {

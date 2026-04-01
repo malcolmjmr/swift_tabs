@@ -1,24 +1,41 @@
 <script>
     /**
-     * Navigation overlay: one window’s tabs per horizontal “page”, window dots below.
-     * See docs/needs/need_window_management.md (TabsView navigation model).
+     * Navigation overlay: optional history + window slides + create slide; view modes;
+     * quick actions; overscroll view picker. See docs/interfaces/interface_tabs_view.md
      */
-    import { tick } from "svelte";
+    import { tick, createEventDispatcher } from "svelte";
     import GalleryView from "./GalleryView.svelte";
     import IconView from "./IconView.svelte";
     import ListView from "./ListView.svelte";
+    import HistoryView from "./HistoryView.svelte";
+    import OverscrollRevealHost from "./OverscrollRevealHost.svelte";
+
+    const dispatch = createEventDispatcher();
+
+    /** When false (toolbar), only window slides — same as legacy carousel */
+    export let includeEdgeSlides = false;
 
     export let windows = [];
-    export let viewType = "list";
+    /** list | icon | gallery | overview */
+    export let viewMode = "list";
 
     export let currentTab = null;
     export let selectedTab = null;
 
-    /** Index into sorted non-empty windows list; two-way bound from App in navigation mode */
-    export let carouselIndex = 0;
+    /**
+     * Slide index: with edges — 0 history, 1..N windows, N+1 create.
+     * Without edges — 0..N-1 windows only.
+     */
+    export let slideIndex = 0;
+
+    /** In overview mode, which window row receives ↑↓ tab selection */
+    export let overviewFocusedWindowIndex = 0;
 
     let trackEl = null;
     let programmaticScroll = false;
+    let viewPickerRevealed = false;
+
+    let historyViewRef;
 
     $: windowsList = [...(windows || [])]
         .filter((w) => w.tabs?.length > 0)
@@ -26,15 +43,46 @@
 
     $: nWindows = windowsList.length;
 
-    $: if (nWindows > 0 && carouselIndex >= nWindows) {
-        carouselIndex = nWindows - 1;
+    $: totalSlides =
+        nWindows === 0 ? 0 : includeEdgeSlides ? nWindows + 2 : nWindows;
+
+    $: if (totalSlides > 0 && slideIndex >= totalSlides) {
+        slideIndex = totalSlides - 1;
+    }
+    $: if (totalSlides > 0 && slideIndex < 0) {
+        slideIndex = 0;
     }
 
-    $: activeWindow =
-        nWindows > 0 ? windowsList[Math.max(0, carouselIndex)] : null;
+    function slideKind(i) {
+        if (!includeEdgeSlides || nWindows === 0) return "window";
+        if (i === 0) return "history";
+        if (i === nWindows + 1) return "create";
+        return "window";
+    }
 
-    /** Keep selection in the visible window: default to active tab in that window */
-    $: if (activeWindow) {
+    function windowIndexFromSlide(i) {
+        if (!includeEdgeSlides) return i;
+        return i - 1;
+    }
+
+    $: kind = nWindows > 0 ? slideKind(slideIndex) : null;
+
+    /** Which window dot is active; -1 when history/create/overview */
+    $: dotActiveIndex =
+        viewMode === "overview"
+            ? -1
+            : !includeEdgeSlides
+              ? slideIndex
+              : kind === "window"
+                ? slideIndex - 1
+                : -1;
+
+    $: activeWindow =
+        kind === "window"
+            ? windowsList[windowIndexFromSlide(slideIndex)]
+            : null;
+
+    $: if (kind === "window" && viewMode !== "overview" && activeWindow) {
         const tabs = [...activeWindow.tabs].sort((a, b) => a.index - b.index);
         const pick = tabs.find((t) => t.active) ?? tabs[0] ?? null;
         if (
@@ -45,14 +93,34 @@
         }
     }
 
+    $: if (viewMode === "overview" && nWindows > 0) {
+        if (overviewFocusedWindowIndex >= nWindows) {
+            overviewFocusedWindowIndex = nWindows - 1;
+        }
+        if (overviewFocusedWindowIndex < 0) {
+            overviewFocusedWindowIndex = 0;
+        }
+        const ow = windowsList[overviewFocusedWindowIndex];
+        if (ow) {
+            const tabs = [...ow.tabs].sort((a, b) => a.index - b.index);
+            const pick =
+                selectedTab?.windowId === ow.id
+                    ? selectedTab
+                    : (tabs.find((t) => t.active) ?? tabs[0]);
+            if (pick && selectedTab?.id !== pick.id) {
+                selectedTab = pick;
+            }
+        }
+    }
+
     let lastScrolledIndex = -1;
 
     async function scrollTrackToIndex(i) {
         await tick();
-        if (!trackEl || nWindows <= 0) return;
+        if (!trackEl || totalSlides <= 0) return;
         const w = trackEl.clientWidth;
         if (w <= 0) return;
-        const target = Math.max(0, Math.min(i, nWindows - 1)) * w;
+        const target = Math.max(0, Math.min(i, totalSlides - 1)) * w;
         if (Math.abs(trackEl.scrollLeft - target) < 2) return;
         programmaticScroll = true;
         trackEl.scrollTo({ left: target, behavior: "auto" });
@@ -61,74 +129,292 @@
         });
     }
 
-    $: if (trackEl && nWindows > 0 && carouselIndex !== lastScrolledIndex) {
-        lastScrolledIndex = carouselIndex;
-        scrollTrackToIndex(carouselIndex);
-    }
-
-    function onTrackScroll() {
-        if (programmaticScroll || !trackEl || nWindows <= 0) return;
-        const w = trackEl.clientWidth;
-        if (w <= 0) return;
-        const i = Math.round(trackEl.scrollLeft / w);
-        const clamped = Math.max(0, Math.min(nWindows - 1, i));
-        if (clamped !== carouselIndex) {
-            lastScrolledIndex = clamped;
-            carouselIndex = clamped;
+    $: if (trackEl && totalSlides > 0 && slideIndex !== lastScrolledIndex) {
+        if (viewMode !== "overview") {
+            lastScrolledIndex = slideIndex;
+            scrollTrackToIndex(slideIndex);
         }
     }
 
-    function goToWindow(i) {
+    function onTrackScroll() {
+        if (programmaticScroll || !trackEl || totalSlides <= 0) return;
+        if (viewMode === "overview") return;
+        const w = trackEl.clientWidth;
+        if (w <= 0) return;
+        const i = Math.round(trackEl.scrollLeft / w);
+        const clamped = Math.max(0, Math.min(totalSlides - 1, i));
+        if (clamped !== slideIndex) {
+            lastScrolledIndex = clamped;
+            slideIndex = clamped;
+        }
+    }
+
+    function goToWindowDot(i) {
         if (i < 0 || i >= nWindows) return;
-        carouselIndex = i;
+        slideIndex = includeEdgeSlides ? i + 1 : i;
     }
 
     function sortedTabs(win) {
         return [...(win?.tabs || [])].sort((a, b) => a.index - b.index);
     }
+
+    function setViewMode(m) {
+        const was = viewMode;
+        viewMode = m;
+        viewPickerRevealed = false;
+        if (was === "overview" && m !== "overview") {
+            lastScrolledIndex = -1;
+            tick().then(() => scrollTrackToIndex(slideIndex));
+        }
+    }
+
+    function onOverviewSectionFocus(winIndex) {
+        overviewFocusedWindowIndex = winIndex;
+        const win = windowsList[winIndex];
+        if (!win) return;
+        const tabs = sortedTabs(win);
+        const pick = tabs.find((x) => x.active) ?? tabs[0];
+        if (pick) selectedTab = pick;
+    }
+
+    /** @param {number} delta */
+    export function historyMoveSelection(delta) {
+        historyViewRef?.moveSelection?.(delta);
+    }
+
+    export function historyActivateSelection() {
+        return historyViewRef?.activateSelectedRow?.();
+    }
+
+    export function getNavSlideKind() {
+        if (viewMode === "overview") return "window";
+        return kind;
+    }
+
+    function forwardTabActivate(e) {
+        dispatch("activatetab", e.detail);
+    }
+
+    async function goFooterHistory() {
+        if (!includeEdgeSlides) {
+            dispatch("footerhistory");
+            return;
+        }
+        viewPickerRevealed = false;
+        if (viewMode === "overview") {
+            viewMode = "list";
+            await tick();
+            lastScrolledIndex = -1;
+        }
+        slideIndex = 0;
+    }
+
+    async function goFooterAdd() {
+        if (!includeEdgeSlides) {
+            dispatch("footeradd");
+            return;
+        }
+        viewPickerRevealed = false;
+        if (viewMode === "overview") {
+            viewMode = "list";
+            await tick();
+            lastScrolledIndex = -1;
+        }
+        slideIndex = nWindows + 1;
+    }
 </script>
 
 {#if nWindows > 0}
     <div class="tabs-view-card">
-        <div
-            class="track"
-            bind:this={trackEl}
-            on:scroll={onTrackScroll}
-        >
-            {#each windowsList as win (win.id)}
-                {@const tabs = sortedTabs(win)}
-                <section class="slide">
-                    <div class="slide-scroll">
-                        {#if viewType === "icon"}
-                            <IconView {tabs} bind:selectedTab bind:currentTab />
-                        {:else if viewType === "gallery"}
-                            <GalleryView {tabs} {currentTab} bind:selectedTab />
-                        {:else}
-                            <ListView {tabs} bind:currentTab bind:selectedTab />
-                        {/if}
-                    </div>
-                </section>
-            {/each}
-        </div>
-        {#if nWindows > 1}
+        {#if kind === "window" && viewMode !== "overview"}
             <div
-                class="dots"
-                role="tablist"
-                aria-label="Open windows"
+                class="quick-actions"
+                role="toolbar"
+                aria-label="Window actions"
             >
+                <button
+                    type="button"
+                    class="qa-btn"
+                    on:click={() => dispatch("quicksave")}
+                >
+                    S<span style="opacity: 0.5; margin-left: 0.5px;">ave</span>
+                </button>
+                <button
+                    type="button"
+                    class="qa-btn"
+                    on:click={() => dispatch("quickfocus")}
+                >
+                    F<span style="opacity: 0.5; margin-left: 0.5px;">ocus</span>
+                </button>
+                <button
+                    type="button"
+                    class="qa-btn"
+                    on:click={() => dispatch("quickclose")}
+                >
+                    <span style="opacity: 0.5; margin-right: 0.5px;">Clos</span
+                    >e
+                </button>
+                <button
+                    type="button"
+                    class="qa-btn"
+                    on:click={() => dispatch("quickmenu")}
+                >
+                    V<span style="opacity: 0.5; margin-left: 0.5px;">iew</span>
+                </button>
+                <button
+                    type="button"
+                    class="qa-btn"
+                    on:click={() => dispatch("quickmenu")}
+                >
+                    M<span style="opacity: 0.5; margin-left: 0.5px;">enu</span>
+                </button>
+            </div>
+        {/if}
+
+        {#if viewPickerRevealed}
+            <div class="view-picker" role="tablist" aria-label="View mode">
+                {#each [{ id: "list", label: "List" }, { id: "icon", label: "Icons" }, { id: "gallery", label: "Gallery" }, { id: "overview", label: "Overview" }] as opt (opt.id)}
+                    <button
+                        type="button"
+                        role="tab"
+                        class="view-chip"
+                        class:active={viewMode === opt.id}
+                        aria-selected={viewMode === opt.id}
+                        on:click={() => setViewMode(opt.id)}
+                    >
+                        {opt.label}
+                    </button>
+                {/each}
+                <button
+                    type="button"
+                    class="view-chip dismiss"
+                    on:click={() => (viewPickerRevealed = false)}
+                >
+                    Done
+                </button>
+            </div>
+        {/if}
+
+        {#if viewMode === "overview"}
+            <div class="overview-wrap">
+                {#each windowsList as win, wi (win.id)}
+                    <section
+                        class="overview-section"
+                        class:focused={wi === overviewFocusedWindowIndex}
+                    >
+                        <div
+                            class="overview-label"
+                            on:click={() => onOverviewSectionFocus(wi)}
+                            on:keydown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    onOverviewSectionFocus(wi);
+                                }
+                            }}
+                            role="button"
+                            tabindex="0"
+                        >
+                            Window {wi + 1}
+                        </div>
+                        <IconView
+                            tabs={sortedTabs(win)}
+                            bind:selectedTab
+                            bind:currentTab
+                            on:pick={() => onOverviewSectionFocus(wi)}
+                            on:activatetab={forwardTabActivate}
+                        />
+                    </section>
+                {/each}
+            </div>
+        {:else}
+            <div class="track" bind:this={trackEl} on:scroll={onTrackScroll}>
+                {#if includeEdgeSlides}
+                    <section class="slide">
+                        <div class="edge-label">History</div>
+                        <HistoryView bind:this={historyViewRef} />
+                    </section>
+                {/if}
+                {#each windowsList as win (win.id)}
+                    {@const tabs = sortedTabs(win)}
+                    <section class="slide">
+                        <OverscrollRevealHost
+                            variant="slide"
+                            enabled={!viewPickerRevealed}
+                            on:reveal={() => (viewPickerRevealed = true)}
+                        >
+                            {#if viewMode === "icon"}
+                                <IconView
+                                    {tabs}
+                                    bind:selectedTab
+                                    bind:currentTab
+                                    on:activatetab={forwardTabActivate}
+                                />
+                            {:else if viewMode === "gallery"}
+                                <GalleryView
+                                    {tabs}
+                                    {currentTab}
+                                    bind:selectedTab
+                                    on:activatetab={forwardTabActivate}
+                                />
+                            {:else}
+                                <ListView
+                                    {tabs}
+                                    bind:currentTab
+                                    bind:selectedTab
+                                    on:activatetab={forwardTabActivate}
+                                />
+                            {/if}
+                        </OverscrollRevealHost>
+                    </section>
+                {/each}
+                {#if includeEdgeSlides}
+                    <section class="slide">
+                        <div class="create-slide">
+                            <div class="edge-label">New window</div>
+                            <p class="create-hint">
+                                Press <kbd>Space</kbd> to open a new window.
+                            </p>
+                        </div>
+                    </section>
+                {/if}
+            </div>
+        {/if}
+
+        <div
+            class="tabs-footer"
+            role="toolbar"
+            aria-label="Navigation shortcuts"
+        >
+            <button
+                type="button"
+                class="footer-icon-btn"
+                aria-label="History"
+                on:click={goFooterHistory}
+            >
+                <span class="material-symbols-rounded">history</span>
+            </button>
+            <div class="dots" role="tablist" aria-label="Open windows">
                 {#each windowsList as _, i}
                     <button
                         type="button"
                         class="dot"
-                        class:active={i === carouselIndex}
+                        class:active={i === dotActiveIndex}
                         role="tab"
-                        aria-selected={i === carouselIndex}
+                        aria-selected={i === dotActiveIndex}
                         aria-label="Window {i + 1}"
-                        on:click={() => goToWindow(i)}
+                        on:click={() => goToWindowDot(i)}
                     />
                 {/each}
             </div>
-        {/if}
+            <button
+                type="button"
+                class="footer-icon-btn"
+                aria-label="New window"
+                on:click={goFooterAdd}
+            >
+                <span class="material-symbols-rounded">add</span>
+            </button>
+        </div>
     </div>
 {/if}
 
@@ -140,6 +426,7 @@
         z-index: 999990;
         width: 360px;
         max-width: calc(100vw - 40px);
+
         display: flex;
         flex-direction: column;
         box-sizing: border-box;
@@ -147,8 +434,71 @@
         border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
         border-radius: 8px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        font-family: system-ui, -apple-system, sans-serif;
-        overflow: hidden;
+        font-family:
+            system-ui,
+            -apple-system,
+            sans-serif;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .quick-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 8px;
+        padding: 0px 10px;
+        border-bottom: 1px solid
+            var(--st-border-color, rgba(255, 255, 255, 0.1));
+        width: calc(100% - 20px);
+        justify-content: space-between;
+        align-items: center;
+        height: 40px;
+    }
+
+    .qa-btn {
+        font-size: 15px;
+        color: white;
+        height: 30px;
+        padding: 4px 6px;
+        border-radius: 4px;
+        cursor: pointer;
+        border: none;
+    }
+
+    .qa-btn:hover {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.12));
+    }
+
+    .view-picker {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        gap: 6px;
+        padding: 8px;
+        overflow-x: auto;
+        border-bottom: 1px solid
+            var(--st-border-color, rgba(255, 255, 255, 0.1));
+        scrollbar-width: thin;
+    }
+
+    .view-chip {
+        flex: 0 0 auto;
+        font-size: 12px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--st-text-muted, #aaa);
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
+        border: 1px solid transparent;
+    }
+
+    .view-chip.active {
+        color: var(--st-text-primary, #fff);
+        border-color: var(--st-border-color, rgba(255, 255, 255, 0.2));
+    }
+
+    .view-chip.dismiss {
+        margin-left: auto;
     }
 
     .track {
@@ -171,12 +521,58 @@
         box-sizing: border-box;
     }
 
-    .slide-scroll {
-        max-height: min(50vh, 420px);
-        overflow-x: hidden;
-        overflow-y: auto;
-        padding: 8px;
-        box-sizing: border-box;
+    .edge-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--st-text-muted, #a0a0a0);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .create-slide {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+    }
+
+    .create-hint {
+        margin: 0;
+        font-size: 13px;
+        color: var(--st-text-muted, #aaa);
+    }
+
+    .create-hint kbd {
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+    }
+
+    .overview-wrap {
+        width: 100%;
+        min-height: 120px;
+    }
+
+    .overview-section {
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid
+            var(--st-border-color, rgba(255, 255, 255, 0.08));
+    }
+
+    .overview-section.focused {
+        outline: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.2));
+        outline-offset: 2px;
+        border-radius: 6px;
+    }
+
+    .overview-label {
+        font-size: 11px;
+        color: var(--st-text-muted, #888);
+        margin-bottom: 6px;
+        cursor: pointer;
     }
 
     .dots {
@@ -186,8 +582,7 @@
         justify-content: center;
         gap: 8px;
         padding: 10px 8px 12px;
-        border-top: 1px solid
-            var(--st-border-color, rgba(255, 255, 255, 0.1));
+
         flex-shrink: 0;
     }
 
@@ -213,5 +608,44 @@
         opacity: 1;
         background: var(--st-text-primary, #ffffff);
         transform: scale(1.15);
+    }
+
+    .tabs-footer {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        flex-shrink: 0;
+        height: 40px;
+        width: calc(100% - 20px);
+        padding: 0px 10px;
+        border-top: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
+    }
+
+    .footer-icon-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 34px;
+        border-radius: 8px;
+
+        border: none;
+        cursor: pointer;
+        padding: 0;
+    }
+
+    .footer-icon-btn:hover {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.14));
+    }
+
+    .footer-icon-btn .material-symbols-rounded {
+        font-size: 25px;
+        color: #ffffff;
+        font-variation-settings:
+            "FILL" 1,
+            "wght" 500,
+            "GRAD" 0,
+            "opsz" 48;
     }
 </style>

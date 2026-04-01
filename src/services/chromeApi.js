@@ -103,5 +103,41 @@ export const chromeService = {
 
     async getTabGroups() {
         return this.sendMessage('GET_TAB_GROUPS');
-    }
+    },
+
+    async getRecentlyClosed() {
+        return this.sendMessage('GET_RECENTLY_CLOSED');
+    },
+
+    async restoreSession(sessionId) {
+        return this.sendMessage('RESTORE_SESSION', { sessionId });
+    },
+
+    async createEmptyWindow() {
+        return this.sendMessage('CREATE_EMPTY_WINDOW');
+    },
+
+    async activateTabGroup(groupId, windowId) {
+        return this.sendMessage('ACTIVATE_TAB_GROUP', { groupId, windowId });
+    },
+
+    async getSessionsFolderBookmarks() {
+        return this.sendMessage('GET_SESSIONS_FOLDER_BOOKMARKS');
+    },
+
+    async getFavoriteDomains() {
+        return this.sendMessage('GET_FAVORITE_DOMAINS');
+    },
+
+    async getRecentHistory() {
+        return this.sendMessage('GET_RECENT_HISTORY');
+    },
+
+    async getBookmarksBar() {
+        return this.sendMessage('GET_BOOKMARKS_BAR');
+    },
+
+    async getAllBookmarks() {
+        return this.sendMessage('GET_ALL_BOOKMARKS');
+    },
 };

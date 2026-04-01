@@ -46,10 +46,18 @@
             <div class="column">
                 <span class="title" title={tab.title}>{displayTitle}</span>
                 <div class="row url-hint-row">
-                    {#if canGoBack}<span class="nav-icon" title="Can go back">←</span>{/if}
-                    {#if canGoForward}<span class="nav-icon" title="Can go forward">→</span>{/if}
+                    {#if canGoBack}<span class="nav-icon" title="Can go back"
+                            >←</span
+                        >{/if}
+                    {#if canGoForward}<span
+                            class="nav-icon"
+                            title="Can go forward">→</span
+                        >{/if}
                     <span class="url" title={tab.url}>{displayHostname}</span>
-                    {#if isAudible}<span class="audio-icon" title="Audio playing">🔊</span>{/if}
+                    {#if isAudible}<span
+                            class="audio-icon"
+                            title="Audio playing">🔊</span
+                        >{/if}
                 </div>
             </div>
         </div>
@@ -64,7 +72,7 @@
         z-index: 999990;
         width: 360px;
         height: 80px;
-        padding: 12px 16px;
+        padding: 10px 16px;
         box-sizing: border-box;
         display: flex;
         background: var(--st-bg-primary, rgba(30, 30, 30, 0.95));
@@ -134,7 +142,7 @@
         -webkit-line-clamp: 2;
         line-clamp: 2;
         -webkit-box-orient: vertical;
-        overflow: hidden;
+        overflow: clip;
     }
 
     .url-hint-row {

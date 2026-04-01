@@ -1,7 +1,11 @@
 <script>
+    import { createEventDispatcher } from "svelte";
+
     export let tabs;
     export let currentTab = null;
     export let selectedTab = null;
+
+    const dispatch = createEventDispatcher();
 
     function hostname(url) {
         if (!url) return "";
@@ -11,6 +15,11 @@
             return "";
         }
     }
+
+    function onTileClick(tab) {
+        selectedTab = tab;
+        dispatch("activatetab", { tab });
+    }
 </script>
 
 <div class="gallery-view">
@@ -18,8 +27,17 @@
         {#each tabs as tab (tab.id)}
             <div
                 class="gallery-view-item"
+                role="button"
+                tabindex="0"
                 class:selected={selectedTab != null && tab.id === selectedTab.id}
                 class:active={currentTab != null && tab.id === currentTab.id}
+                on:click={() => onTileClick(tab)}
+                on:keydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onTileClick(tab);
+                    }
+                }}
             >
                 {#if tab.favIconUrl}
                     <img
@@ -66,6 +84,7 @@
         border-radius: 8px;
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
         transition: background 0.1s;
+        cursor: pointer;
         width: calc(50% - 6px);
         min-width: 120px;
         max-width: 100%;
@@ -106,7 +125,7 @@
         text-overflow: ellipsis;
         max-width: 100%;
         text-align: left;
-        color: var(--st-text-primary, #ffffff);
+        color: #ffffff;
     }
 
     .gallery-view-item-url {

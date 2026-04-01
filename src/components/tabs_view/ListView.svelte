@@ -1,7 +1,16 @@
 <script>
+    import { createEventDispatcher } from "svelte";
+
     export let tabs;
     export let currentTab = null;
     export let selectedTab = null;
+
+    const dispatch = createEventDispatcher();
+
+    function onRowClick(tab) {
+        selectedTab = tab;
+        dispatch("activatetab", { tab });
+    }
 </script>
 
 <div class="list-view">
@@ -9,8 +18,17 @@
         {#each tabs as tab (tab.id)}
             <div
                 class="list-view-item"
+                role="button"
+                tabindex="0"
                 class:active={currentTab != null && tab.id === currentTab.id}
                 class:selected={selectedTab != null && tab.id === selectedTab.id}
+                on:click={() => onRowClick(tab)}
+                on:keydown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRowClick(tab);
+                    }
+                }}
             >
                 {#if tab.favIconUrl}
                     <img
@@ -59,8 +77,8 @@
         transition: background 0.1s;
         width: 100%;
         box-sizing: border-box;
-        cursor: default;
-        color: var(--st-text-primary, #ffffff);
+        cursor: pointer;
+        color: #ffffff;
     }
 
     .list-view-item:hover {
@@ -104,5 +122,6 @@
         min-width: 0;
         flex: 1;
         text-align: left;
+        color: #ffffff;
     }
 </style>

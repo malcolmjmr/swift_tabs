@@ -320,7 +320,174 @@ const chromeApiHandlers = {
                 type: "group",
             };
         });
-    }
+    },
+
+    async GET_RECENTLY_CLOSED() {
+        return chrome.sessions.getRecentlyClosed({ maxResults: 25 });
+    },
+
+    async RESTORE_SESSION({ sessionId }) {
+        await chrome.sessions.restore(sessionId);
+        broadcastTabsDataChanged();
+        return { success: true };
+    },
+
+    async CREATE_EMPTY_WINDOW() {
+        const w = await chrome.windows.create({ focused: true, url: "about:blank" });
+        broadcastTabsDataChanged();
+        return w;
+    },
+
+    async ACTIVATE_TAB_GROUP({ groupId, windowId }) {
+        const tabs = await chrome.tabs.query({ windowId });
+        const inGroup = tabs.filter((t) => t.groupId === groupId);
+        if (inGroup.length === 0) return { success: false };
+        const first = [...inGroup].sort((a, b) => a.index - b.index)[0];
+        await chrome.tabGroups.update(groupId, { collapsed: false });
+        await chrome.windows.update(windowId, { focused: true });
+        await chrome.tabs.update(first.id, { active: true });
+        return { success: true };
+    },
+
+    async GET_SESSIONS_FOLDER_BOOKMARKS() {
+        const { sessionsBookmarksFolderId } = await chrome.storage.local.get(
+            "sessionsBookmarksFolderId"
+        );
+        if (!sessionsBookmarksFolderId) return [];
+        const children = await chrome.bookmarks.getChildren(
+            sessionsBookmarksFolderId
+        );
+        return children
+            .filter((n) => !n.url)
+            .map((f) => ({ id: f.id, title: f.title || "Untitled" }));
+    },
+
+    async GET_FAVORITE_DOMAINS() {
+        // Get last 3 months of history to calculate favorite domains
+        const threeMonthsAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+        const history = await chrome.history.search({
+            text: '',
+            startTime: threeMonthsAgo,
+            maxResults: 10000
+        });
+
+        // Group by domain and track unique visit dates
+        const domainStats = new Map();
+
+        for (const item of history) {
+            const domain = extractDomain(item.url);
+            if (!domain || domain === 'newtab') continue;
+
+            const visitDate = new Date(item.lastVisitTime).toDateString();
+
+            if (!domainStats.has(domain)) {
+                domainStats.set(domain, {
+                    domain,
+                    urls: new Set(),
+                    visitDates: new Set(),
+                    lastVisitTime: item.lastVisitTime,
+                    title: item.title || domain
+                });
+            }
+
+            const stats = domainStats.get(domain);
+            stats.urls.add(item.url);
+            stats.visitDates.add(visitDate);
+            if (item.lastVisitTime > stats.lastVisitTime) {
+                stats.lastVisitTime = item.lastVisitTime;
+                stats.title = item.title || stats.title;
+            }
+        }
+
+        // Filter to domains with 3+ unique visit dates, sort by visit count
+        const favorites = Array.from(domainStats.values())
+            .filter(d => d.visitDates.size >= 3)
+            .map(d => ({
+                domain: d.domain,
+                url: `https://${d.domain}`,
+                title: d.title,
+                visitCount: d.visitDates.size,
+                lastVisitTime: d.lastVisitTime,
+                type: 'app'
+            }))
+            .sort((a, b) => b.visitCount - a.visitCount || b.lastVisitTime - a.lastVisitTime)
+            .slice(0, 20);
+
+        return favorites;
+    },
+
+    async GET_RECENT_HISTORY() {
+        // Get recent history with more results for deduplication
+        const history = await chrome.history.search({
+            text: '',
+            maxResults: 200
+        });
+
+        // Deduplicate by URL (keep most recent)
+        const seenUrls = new Set();
+        const uniqueHistory = [];
+
+        for (const item of history) {
+            // Normalize URL for deduplication
+            const normalizedUrl = item.url.replace(/#.*$/, '').replace(/\?.*$/, '');
+            if (seenUrls.has(normalizedUrl)) continue;
+
+            seenUrls.add(normalizedUrl);
+            uniqueHistory.push({
+                id: item.id,
+                title: item.title || extractDomain(item.url),
+                url: item.url,
+                lastVisitTime: item.lastVisitTime,
+                visitCount: item.visitCount,
+                type: 'history'
+            });
+        }
+
+        return uniqueHistory.slice(0, 50);
+    },
+
+    async GET_BOOKMARKS_BAR() {
+        // Get the bookmark bar (id '1' is the bookmark bar in Chrome)
+        const bookmarkBar = await chrome.bookmarks.getChildren('1');
+        return bookmarkBar
+            .filter(b => b.url) // Only bookmarks, not folders
+            .map(b => ({
+                id: b.id,
+                title: b.title || extractDomain(b.url),
+                url: b.url,
+                dateAdded: b.dateAdded,
+                type: 'bookmark'
+            }))
+            .sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+    },
+
+    async GET_ALL_BOOKMARKS() {
+        // Get all bookmarks recursively
+        const allBookmarks = [];
+
+        async function getBookmarksRecursively(id) {
+            const children = await chrome.bookmarks.getChildren(id);
+            for (const child of children) {
+                if (child.url) {
+                    allBookmarks.push({
+                        id: child.id,
+                        title: child.title || extractDomain(child.url),
+                        url: child.url,
+                        dateAdded: child.dateAdded,
+                        type: 'bookmark'
+                    });
+                } else if (child.id !== '1') { // Skip bookmark bar, handled separately
+                    await getBookmarksRecursively(child.id);
+                }
+            }
+        }
+
+        // Get other bookmarks folder (id '2')
+        await getBookmarksRecursively('2');
+
+        // Sort by date added (most recent first) 
+        return allBookmarks.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+    },
 };
 
 function extractDomain(url) {

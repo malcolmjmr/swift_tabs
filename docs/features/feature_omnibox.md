@@ -8,7 +8,7 @@
 
 ### Description
 
-A unified search interface with tabbed sections for different search scopes. Appears when typing in navigation mode. Supports searching across open tabs, tab groups, bookmarks, and history. Eliminates the need to visually hunt through tabs or manually type full URLs.
+A unified search interface with tabbed sections for different search scopes. Opens from **o** / **n** (and can be focused while navigation mode is active). Supports searching across open tabs, tab groups, bookmarks, and history. Eliminates the need to visually hunt through tabs or manually type full URLs.
 
 ---
 
@@ -17,7 +17,7 @@ A unified search interface with tabbed sections for different search scopes. App
 - Press **"o"** or **"n"** while **not** in a typing context (`input`, `textarea`, `select`, contenteditable), with **no modifier keys** (Ctrl/Alt/Meta/Shift).
 - If navigation mode is not already active, **"o"** / **"n"** **enter navigation mode** and open the omnibox with an empty query.
 - Opening is **suppressed** while the tab menu or keyboard shortcuts help panel is open.
-- **In navigation mode:** type any printable character (with no modifiers, no text selection, and help closed) to open the omnibox and seed the query with that character.
+- **In navigation mode:** arbitrary printable keys **do not** open the omnibox (TabsView quick actions use single-letter shortcuts). Use **o** / **n** to open the omnibox; once open, type normally in the omnibox field.
 - Omnibox appears with the focus ready for input.
 
 ---
@@ -136,7 +136,7 @@ Each section displays a vertically scrollable list of matching items.
 
 **Opening and Searching:**
 ```
-User presses "o" or types in navigation mode
+User presses "o" or "n" (enters navigation mode if needed)
               │
               ▼
     ┌─────────────────────┐

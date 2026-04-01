@@ -1,46 +1,53 @@
 ## Interface: Tabs View
 
-**Associated Screen:** Navigation Mode (content script overlay)  
+**Associated Screen:** Navigation Mode (content script overlay); optional **Toolbar** (no edge slides)  
 **Supports Interaction:** [Navigation Mode](../interactions/interaction_navigation_mode.md)  
-**Addresses Need:** [Window and Group Management](../needs/need_window_management.md) (windows-only carousel; tab groups future)
+**Addresses Need:** [Window and Group Management](../needs/need_window_management.md)
 
 ---
 
 ### Layout Structure
 
-Fixed **card** at **bottom-right** of the viewport, aligned with Active Tab Information and Tab Menu styling (`--st-bg-primary`, `--st-border-color`, `8px` radius, shadow).
+Fixed **card** at **bottom-right** of the viewport (navigation) or embedded in toolbar, aligned with Active Tab Information and Tab Menu styling (`--st-bg-primary`, `--st-border-color`, `8px` radius, shadow).
 
-**Top section — tab list region**
+**Quick actions row** (navigation mode, **window** slide only, not in **Overview**)
 
-- Horizontal **scroll-snap** track: each **slide** is exactly the width of the visible area (`100%` of the track).
-- Only **one window’s tabs** appear at a time; other windows’ lists are off-screen until the user changes the carousel (scroll, dots, or **←** / **→** in Navigation Mode).
-- Inner area: `max-height` ~ `min(50vh, 420px)` with **vertical** scrolling for long tab lists.
+- **Save / share** (<kbd>S</kbd>), **Focus** (<kbd>F</kbd>), **Close** (<kbd>x</kbd>), **Menu** (<kbd>M</kbd>).
+- Dispatches events to `App.svelte` (copy URL, `focusWindow`, `closeTab`, open tab menu).
 
-**Bottom section — window dots** (only if **more than one** open window)
+**View picker** (revealed by **wheel up** while the tab list is scrolled to the **top** — overscroll threshold)
 
-- Row of dots **directly below** the tab list, separated by a light top border.
-- One dot per window (same order as sorted open windows: non-empty, sorted by `window.id`).
-- Active dot indicates which window’s tabs are shown; dots are clickable to jump to that window.
+- Horizontal row of chips: **List**, **Icons**, **Gallery**, **Overview**, **Done**.
+- Sets `viewMode` (`list` | `icon` | `gallery` | `overview`).
+
+**Main region**
+
+- **Navigation + `includeEdgeSlides`:** horizontal **scroll-snap** track:
+  - **History** slide (left): [HistoryView](../../src/components/tabs_view/HistoryView.svelte) — recently closed, open tab groups, bookmark session folders.
+  - **Window** slides × N: tab list for that window per `viewMode` (except Overview).
+  - **Create** slide (right): placeholder; **Space** opens a new empty window.
+- **Overview** `viewMode`: single **vertical** scroll — all windows, each row **IconView** (wrapped favicons); focused window ring; **←**/**→** / horizontal wheel move focus between windows.
+- **Toolbar** (`includeEdgeSlides={false}`): legacy track — **only** window slides (no History/Create).
+
+**Bottom — window dots** (only if **more than one** open window **and** not in Overview)
+
+- One dot per window; maps to window slides (skips History/Create when edges enabled).
+- No dot highlighted on History or Create slides.
+
+Inner slide area: `max-height` ~ `min(50vh, 420px)` with **vertical** scrolling for long tab lists.
 
 ---
 
 ### Component Hierarchy
 
 - `TabsView` (card)
-  - **Track** (horizontal scroll container)
-    - **Slide** × N (one per open window)
-      - `ListView` | `IconView` | `GalleryView` (per `viewType`)
-  - **Dots** (`role="tablist"`; each dot `role="tab"`, `aria-selected`)
-
----
-
-### Component Specs
-
-| Element | Behavior |
-|---------|----------|
-| Slide | Full-width page; scroll-snap align start |
-| List / icon / gallery | Same as before per `viewType`; receives sorted tabs for that window |
-| Dots | Navigate carousel; styled muted vs active using design tokens |
+  - **Quick actions** (conditional)
+  - **View picker** (conditional)
+  - **Overview** column **or** **Track** (horizontal scroll)
+    - **History** slide → `HistoryView`
+    - **Slide** × N windows → `ListView` | `IconView` | `GalleryView`
+    - **Create** slide → placeholder
+  - **Dots** (conditional)
 
 ---
 
@@ -48,18 +55,31 @@ Fixed **card** at **bottom-right** of the viewport, aligned with Active Tab Info
 
 | Prop / binding | Owner | Purpose |
 |----------------|-------|---------|
-| `windows` | Parent (`App`, `Toolbar`) | Raw Chrome windows from store |
+| `windows` | Parent | Raw Chrome windows from store |
+| `includeEdgeSlides` | Parent | `true` = History + windows + Create (navigation); `false` = windows only (toolbar) |
 | `currentTab` | Two-way | Browser’s current tab context |
-| `selectedTab` | Two-way | Highlighted tab in overlay; **Space** activates |
-| `carouselIndex` | Two-way (`navCarouselIndex` in `App.svelte`) | Index into sorted open windows |
-| `viewType` | Parent | `"list"` \| `"icon"` \| `"gallery"` |
+| `selectedTab` | Two-way | Highlighted tab; **Space** activates (window / overview slides) |
+| `slideIndex` | Two-way (`navSlideIndex` in `App.svelte`) | With edges: `0` history, `1..N` windows, `N+1` create; without edges: `0..N-1` windows |
+| `viewMode` | Two-way (`navViewMode` in `App.svelte`) | `list` \| `icon` \| `gallery` \| `overview` |
+| `overviewFocusedWindowIndex` | Two-way | Which window row is focused in Overview |
 
-When `carouselIndex` changes, TabsView ensures `selectedTab` belongs to that window (defaults to active tab in that window if the prior selection was another window).
+`TabsView` exposes `getNavSlideKind()`, `historyMoveSelection(delta)`, `historyActivateSelection()` for `App.svelte` keyboard handling.
 
 ---
 
 ### Code References
 
-- [TabsView.svelte](../../src/components/tabs_view/TabsView.svelte) — card, track, slides, dots, scroll sync
-- [ListView.svelte](../../src/components/tabs_view/ListView.svelte) — list styling inside each slide
-- [App.svelte](../../src/App.svelte) — `navCarouselIndex`, wheel handlers, Navigation Mode arrow keys
+- [TabsView.svelte](../../src/components/tabs_view/TabsView.svelte) — card, edges, overview, picker, quick actions
+- [HistoryView.svelte](../../src/components/tabs_view/HistoryView.svelte) — sessions, groups, saved folders
+- [ListView.svelte](../../src/components/tabs_view/ListView.svelte), [IconView.svelte](../../src/components/tabs_view/IconView.svelte), [GalleryView.svelte](../../src/components/tabs_view/GalleryView.svelte)
+- [App.svelte](../../src/App.svelte) — `navSlideIndex`, `navViewMode`, wheel, arrows, **Space**, omnibox guard
+
+---
+
+### TODO (Pending)
+
+1. **Window/Container Header** — Add a header for each window slide that displays:
+   - Either the tab group name (if tabs are grouped) or the number of tabs in the window
+   - On the right side: an Option key symbol (⌥) that opens a window/container menu
+
+2. **Smooth Horizontal Scroll Animation** — Replace the current scroll-snap behavior for window switching with a smooth animated transition between slides rather than snapping directly to the next window.

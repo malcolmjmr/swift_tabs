@@ -19,6 +19,7 @@
     import Omnibox from "./components/Omnibox.svelte";
     import ActiveTabInfo from "./components/tab/ActiveTabInfo.svelte";
     import HelpMenu from "./components/HelpMenu.svelte";
+    import SettingsPage from "./components/SettingsPage.svelte";
 
     let isInNavigationMode = false;
     let omniboxIsOpen = false;
@@ -26,6 +27,7 @@
     let omniboxOpenedStandalone = false; // true when "o" opened it from outside nav mode
     let tabMenuIsOpen = false;
     let systemMenuIsOpen = false;
+    let settingsPageIsOpen = false;
     let helpMenuIsOpen = false;
 
     const TAB_SWITCHING_DISMISS_MS = 1500;
@@ -35,16 +37,129 @@
     let mouseX = 0;
     let mouseY = 0;
 
-    let settings = {};
+    const SETTINGS_DEFAULTS = {
+        toolbarInPopup: false,
+        openToolbarWithMetaKey: false,
+        queueLinkWithMetaKey: false,
+        copyImageWithMetaKey: false,
+        defaultView: "windows",
+        longPressDelayMs: 500,
+        scrollVerticalThreshold: 33,
+        scrollHorizontalThreshold: 33,
+    };
+
+    let settings = { ...SETTINGS_DEFAULTS };
 
     let rightClickTimer;
-    const longPressThreshold = 500;
     let lastDocumentTitle = "";
+
+    $: longPressThreshold = settings.longPressDelayMs ?? 500;
+    $: scrollVerticalThreshold = settings.scrollVerticalThreshold ?? 33;
+    $: scrollHorizontalThreshold = settings.scrollHorizontalThreshold ?? 33;
+
+    let spaceLongPressTimer = null;
+    let metaLongPressTimer = null;
+    let altLongPressTimer = null;
+    let ctrlLongPressTimer = null;
+    let spaceLongPressFired = false;
+    let spaceArm = false;
+
+    function clearSpaceLongPressTimer() {
+        if (spaceLongPressTimer) {
+            clearTimeout(spaceLongPressTimer);
+            spaceLongPressTimer = null;
+        }
+    }
+
+    function clearMetaLongPressTimer() {
+        if (metaLongPressTimer) {
+            clearTimeout(metaLongPressTimer);
+            metaLongPressTimer = null;
+        }
+    }
+
+    function clearAltLongPressTimer() {
+        if (altLongPressTimer) {
+            clearTimeout(altLongPressTimer);
+            altLongPressTimer = null;
+        }
+    }
+
+    function clearCtrlLongPressTimer() {
+        if (ctrlLongPressTimer) {
+            clearTimeout(ctrlLongPressTimer);
+            ctrlLongPressTimer = null;
+        }
+    }
+
+    function saveSettingsPatch(patch) {
+        settings = { ...settings, ...patch };
+        chrome.storage.local.set({ settings });
+    }
+
+    function tabMenuContextTab() {
+        return isInNavigationMode ? selectedTab : currentTab;
+    }
+
+    function openOmniboxFromShortcut() {
+        omniboxQuery = "";
+        omniboxIsOpen = true;
+        omniboxOpenedStandalone = !isInNavigationMode;
+        if (!isInNavigationMode) {
+            isInNavigationMode = true;
+            chrome.runtime.sendMessage({
+                type: "NAVIGATION_MODE",
+                isInNavigationMode,
+            });
+        }
+    }
+
+    async function handleSpaceShortPress() {
+        if (isInNavigationMode) {
+            const nk =
+                tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
+            if (nk === "create") {
+                await chromeService.createEmptyWindow();
+                await tabStore.refreshState();
+                await fetchTabInfo();
+                isInNavigationMode = false;
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode,
+                });
+            } else if (nk === "history") {
+                await tabsViewRef?.historyActivateSelection?.();
+                await tabStore.refreshState();
+                await fetchTabInfo();
+            } else if (selectedTab) {
+                chromeService.activateTab(selectedTab.id);
+                isInNavigationMode = false;
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode,
+                });
+            }
+        } else {
+            chrome.runtime.sendMessage({
+                type: "NAVIGATION_MODE",
+                isInNavigationMode: !isInNavigationMode,
+            });
+        }
+    }
+
+    function handleWindowBlur() {
+        clearSpaceLongPressTimer();
+        clearMetaLongPressTimer();
+        clearAltLongPressTimer();
+        clearCtrlLongPressTimer();
+        spaceArm = false;
+    }
 
     onMount(async () => {
         console.log("App mounted");
         document.addEventListener("wheel", handleWheel, { passive: false });
         document.addEventListener("click", handleDocumentClick);
+        window.addEventListener("blur", handleWindowBlur);
 
         await tabStore.init();
         await recentActionsStore.init();
@@ -56,6 +171,11 @@
     onDestroy(() => {
         document.removeEventListener("wheel", handleWheel, { passive: false });
         document.removeEventListener("click", handleDocumentClick);
+        window.removeEventListener("blur", handleWindowBlur);
+        clearSpaceLongPressTimer();
+        clearMetaLongPressTimer();
+        clearAltLongPressTimer();
+        clearCtrlLongPressTimer();
     });
 
     function handleDocumentClick() {
@@ -147,27 +267,22 @@
 
     function loadSettings() {
         chrome.storage.local.get(["settings"], (data) => {
-            const settingsIsEmpty =
-                true ||
-                data.settings == null ||
-                Object.keys(data.settings).length == 0;
-            settings = settingsIsEmpty
-                ? {
-                      toolbarInPopup: false,
-                      openToolbarWithMetaKey: false,
-                      queueLinkWithMetaKey: false,
-                      copyImageWithMetaKey: false,
-                      defaultView: "windows",
-                  }
-                : data.settings;
+            const raw = data.settings;
+            settings = {
+                ...SETTINGS_DEFAULTS,
+                ...(raw && typeof raw === "object" ? raw : {}),
+            };
         });
     }
 
     let currentTab = null;
     let selectedTab = null;
 
-    /** Carousel window index in TabsView (sorted open windows); see tabs_view/TabsView.svelte */
-    let navCarouselIndex = 0;
+    /** TabsView slide: 0=history, 1..N=windows, N+1=create (with edge slides) */
+    let navSlideIndex = 0;
+    let navViewMode = "list";
+    let overviewFocusedWindowIndex = 0;
+    let tabsViewRef = null;
 
     let showActiveTabInfo = false;
 
@@ -175,6 +290,17 @@
         return [...get(windows)]
             .filter((w) => w.tabs?.length > 0)
             .sort((a, b) => a.id - b.id);
+    }
+
+    /** Matches TabsView slide kind when `includeEdgeSlides` is true */
+    function navEdgeSlideKind() {
+        if (navViewMode === "overview") return "window";
+        const wl = sortedOpenWindows();
+        const n = wl.length;
+        if (n === 0) return null;
+        if (navSlideIndex === 0) return "history";
+        if (navSlideIndex === n + 1) return "create";
+        return "window";
     }
 
     async function onNavigationModeMessage(message) {
@@ -185,7 +311,8 @@
             const idx = currentTab
                 ? wl.findIndex((w) => w.id === currentTab.windowId)
                 : -1;
-            navCarouselIndex = idx >= 0 ? idx : 0;
+            navSlideIndex = (idx >= 0 ? idx : 0) + 1;
+            overviewFocusedWindowIndex = idx >= 0 ? idx : 0;
         }
     }
 
@@ -256,6 +383,7 @@
             omniboxOpenedStandalone = false;
             tabMenuIsOpen = false;
             systemMenuIsOpen = false;
+            settingsPageIsOpen = false;
             helpMenuIsOpen = false;
         }
     }
@@ -269,10 +397,7 @@
 
     function noModifiersStrict(event) {
         return (
-            !event.ctrlKey &&
-            !event.altKey &&
-            !event.metaKey &&
-            !event.shiftKey
+            !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
         );
     }
 
@@ -287,6 +412,7 @@
             !tabMenuIsOpen &&
             !isInTabSwitchingMode &&
             !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
             !helpMenuIsOpen
         );
     }
@@ -294,24 +420,31 @@
     async function handleKeydown(event) {
         if (isInTypingContext()) return;
 
-        const isPrintableChar =
-            event.key.length === 1 &&
-            !event.ctrlKey &&
-            !event.altKey &&
-            !event.metaKey &&
-            !event.shiftKey &&
-            ![
-                " ",
-                "Enter",
-                "Escape",
-                "ArrowUp",
-                "ArrowDown",
-                "ArrowLeft",
-                "ArrowRight",
-                "Delete",
-                "Backspace",
-                "Tab",
-            ].includes(event.key);
+        if (
+            spaceLongPressTimer &&
+            !(event.key === " " && event.repeat) &&
+            event.key !== " "
+        ) {
+            clearSpaceLongPressTimer();
+        }
+        if (
+            metaLongPressTimer &&
+            event.metaKey &&
+            event.key !== "Meta" &&
+            event.key !== "OS"
+        ) {
+            clearMetaLongPressTimer();
+        }
+        if (altLongPressTimer && event.altKey && event.key !== "Alt") {
+            clearAltLongPressTimer();
+        }
+        if (
+            ctrlLongPressTimer &&
+            event.ctrlKey &&
+            event.key !== "Control"
+        ) {
+            clearCtrlLongPressTimer();
+        }
 
         if (
             ((event.key === "?" && noModifiersForHelpKey(event)) ||
@@ -329,20 +462,13 @@
             noModifiersStrict(event) &&
             !omniboxIsOpen &&
             !tabMenuIsOpen &&
-            !helpMenuIsOpen
+            !helpMenuIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen
         ) {
             event.preventDefault();
             event.stopPropagation();
-            omniboxQuery = "";
-            omniboxIsOpen = true;
-            omniboxOpenedStandalone = !isInNavigationMode;
-            if (!isInNavigationMode) {
-                isInNavigationMode = true;
-                chrome.runtime.sendMessage({
-                    type: "NAVIGATION_MODE",
-                    isInNavigationMode,
-                });
-            }
+            openOmniboxFromShortcut();
         } else if (
             (event.key === "a" ||
                 event.key === "A" ||
@@ -351,51 +477,167 @@
             noModifiersStrict(event) &&
             !tabMenuIsOpen &&
             !helpMenuIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
             (isInNavigationMode ? selectedTab : currentTab)
         ) {
             event.preventDefault();
             event.stopPropagation();
             tabMenuIsOpen = true;
         } else if (
-            event.key === "Meta" &&
-            isInNavigationMode &&
-            selectedTab &&
+            (event.key === "Meta" || event.key === "OS") &&
+            !event.repeat &&
+            !helpMenuIsOpen &&
             !tabMenuIsOpen &&
-            !helpMenuIsOpen
+            !omniboxIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
+            tabMenuContextTab()
         ) {
-            event.preventDefault();
-            tabMenuIsOpen = true;
+            clearMetaLongPressTimer();
+            metaLongPressTimer = setTimeout(() => {
+                metaLongPressTimer = null;
+                if (
+                    helpMenuIsOpen ||
+                    tabMenuIsOpen ||
+                    omniboxIsOpen ||
+                    systemMenuIsOpen ||
+                    settingsPageIsOpen
+                ) {
+                    return;
+                }
+                if (!tabMenuContextTab()) return;
+                tabMenuIsOpen = true;
+            }, longPressThreshold);
         } else if (
-            isPrintableChar &&
+            event.key === "Alt" &&
+            !event.repeat &&
+            !helpMenuIsOpen &&
+            !tabMenuIsOpen &&
+            !omniboxIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen
+        ) {
+            clearAltLongPressTimer();
+            altLongPressTimer = setTimeout(() => {
+                altLongPressTimer = null;
+                if (
+                    helpMenuIsOpen ||
+                    tabMenuIsOpen ||
+                    omniboxIsOpen ||
+                    systemMenuIsOpen ||
+                    settingsPageIsOpen
+                ) {
+                    return;
+                }
+                systemMenuIsOpen = true;
+            }, longPressThreshold);
+        } else if (
+            event.key === "Control" &&
+            !event.repeat &&
+            !helpMenuIsOpen &&
+            !tabMenuIsOpen &&
+            !omniboxIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen
+        ) {
+            clearCtrlLongPressTimer();
+            ctrlLongPressTimer = setTimeout(() => {
+                ctrlLongPressTimer = null;
+                if (
+                    helpMenuIsOpen ||
+                    tabMenuIsOpen ||
+                    omniboxIsOpen ||
+                    systemMenuIsOpen ||
+                    settingsPageIsOpen
+                ) {
+                    return;
+                }
+                settingsPageIsOpen = true;
+            }, longPressThreshold);
+        } else if (
             isInNavigationMode &&
             !omniboxIsOpen &&
+            !tabMenuIsOpen &&
             !helpMenuIsOpen &&
-            window.getSelection().toString().length === 0
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
+            noModifiersStrict(event) &&
+            (event.key === "s" ||
+                event.key === "S" ||
+                event.key === "f" ||
+                event.key === "F" ||
+                event.key === "x" ||
+                event.key === "X") &&
+            navEdgeSlideKind() === "window" &&
+            selectedTab
         ) {
             event.preventDefault();
             event.stopPropagation();
-            omniboxQuery = event.key;
-            omniboxIsOpen = true;
-            omniboxOpenedStandalone = false;
+            if (event.key === "s" || event.key === "S") {
+                (async () => {
+                    const url = await chromeService.copyTabUrl(selectedTab.id);
+                    if (url) await navigator.clipboard.writeText(url);
+                })();
+            } else if (event.key === "f" || event.key === "F") {
+                (async () => {
+                    await chromeService.focusWindow(selectedTab.windowId);
+                    await tabStore.refreshState();
+                })();
+            } else if (event.key === "x" || event.key === "X") {
+                (async () => {
+                    await tabStore.closeTab(selectedTab.id);
+                    await tabStore.refreshState();
+                    selectedTab = currentTab;
+                })();
+            }
         } else if (event.key === " ") {
+            if (event.repeat) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                return;
+            }
+            if (
+                helpMenuIsOpen ||
+                tabMenuIsOpen ||
+                omniboxIsOpen ||
+                systemMenuIsOpen ||
+                settingsPageIsOpen
+            ) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                return;
+            }
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
-            if (isInNavigationMode && selectedTab) {
-                chromeService.activateTab(selectedTab.id);
-                isInNavigationMode = false;
-                chrome.runtime.sendMessage({
-                    type: "NAVIGATION_MODE",
-                    isInNavigationMode,
-                });
-            } else {
-                chrome.runtime.sendMessage({
-                    type: "NAVIGATION_MODE",
-                    isInNavigationMode: !isInNavigationMode,
-                });
-            }
+            spaceArm = true;
+            spaceLongPressFired = false;
+            clearSpaceLongPressTimer();
+            spaceLongPressTimer = setTimeout(() => {
+                spaceLongPressTimer = null;
+                if (
+                    helpMenuIsOpen ||
+                    tabMenuIsOpen ||
+                    omniboxIsOpen ||
+                    systemMenuIsOpen ||
+                    settingsPageIsOpen
+                ) {
+                    return;
+                }
+                spaceLongPressFired = true;
+                openOmniboxFromShortcut();
+            }, longPressThreshold);
         } else if (event.key === "Escape") {
-            if (helpMenuIsOpen) {
+            if (settingsPageIsOpen) {
+                event.preventDefault();
+                settingsPageIsOpen = false;
+            } else if (systemMenuIsOpen) {
+                event.preventDefault();
+                systemMenuIsOpen = false;
+            } else if (helpMenuIsOpen) {
                 event.preventDefault();
                 helpMenuIsOpen = false;
             } else if (isInTabSwitchingMode) {
@@ -471,65 +713,138 @@
         } else if (
             (event.key === "Delete" || event.key === "Backspace") &&
             isInNavigationMode &&
-            selectedTab
+            selectedTab &&
+            navEdgeSlideKind() === "window"
         ) {
-                event.preventDefault();
-                event.stopPropagation();
-                const windowsList = [...get(windows)]
-                    .filter((w) => w.tabs.length > 0)
-                    .sort((a, b) => a.id - b.id);
-                const window = windowsList.find(
-                    (w) => w.id === selectedTab.windowId,
-                );
-                if (!window?.tabs?.length) return;
-                const tabs = [...window.tabs].sort((a, b) => a.index - b.index);
-                const currentIndex = tabs.findIndex(
-                    (t) => t.id === selectedTab.id,
-                );
-                await tabStore.closeTab(selectedTab.id);
-                await tabStore.refreshState();
-                selectedTab = currentTab;
-                // const updatedWindows = get(windows);
-                // const updatedWindow = updatedWindows.find(
-                //     (w) => w.id === window.id,
-                // );
-                // const updatedTabs = updatedWindow?.tabs
-                //     ? [...updatedWindow.tabs].sort((a, b) => a.index - b.index)
-                //     : [];
-                // if (updatedTabs.length > 0) {
-                //     const nextIndex = Math.min(
-                //         currentIndex,
-                //         updatedTabs.length - 1,
-                //     );
-                //     selectedTab = updatedTabs[nextIndex];
-                // } else {
-                //     selectedTab = null;
-                // }
-            } else if (
-                event.key === "Enter" &&
-                isInNavigationMode &&
-                selectedTab
-            ) {
-                moveSelectedTabToNextWindow(event);
-            } else if (
-                isInNavigationMode &&
-                !tabMenuIsOpen &&
-                !omniboxIsOpen &&
-                !helpMenuIsOpen &&
-                ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
-                    event.key,
-                )
-            ) {
-                event.preventDefault();
-                event.stopPropagation();
-                const wl = sortedOpenWindows();
-                if (wl.length === 0) return;
-                const win = wl[navCarouselIndex] ?? wl[0];
+            event.preventDefault();
+            event.stopPropagation();
+            const windowsList = [...get(windows)]
+                .filter((w) => w.tabs.length > 0)
+                .sort((a, b) => a.id - b.id);
+            const window = windowsList.find(
+                (w) => w.id === selectedTab.windowId,
+            );
+            if (!window?.tabs?.length) return;
+            const tabs = [...window.tabs].sort((a, b) => a.index - b.index);
+            const currentIndex = tabs.findIndex((t) => t.id === selectedTab.id);
+            await tabStore.closeTab(selectedTab.id);
+            await tabStore.refreshState();
+            selectedTab = currentTab;
+            // const updatedWindows = get(windows);
+            // const updatedWindow = updatedWindows.find(
+            //     (w) => w.id === window.id,
+            // );
+            // const updatedTabs = updatedWindow?.tabs
+            //     ? [...updatedWindow.tabs].sort((a, b) => a.index - b.index)
+            //     : [];
+            // if (updatedTabs.length > 0) {
+            //     const nextIndex = Math.min(
+            //         currentIndex,
+            //         updatedTabs.length - 1,
+            //     );
+            //     selectedTab = updatedTabs[nextIndex];
+            // } else {
+            //     selectedTab = null;
+            // }
+        } else if (
+            event.key === "Enter" &&
+            isInNavigationMode &&
+            selectedTab &&
+            navEdgeSlideKind() === "window"
+        ) {
+            moveSelectedTabToNextWindow(event);
+        } else if (
+            isInNavigationMode &&
+            !tabMenuIsOpen &&
+            !omniboxIsOpen &&
+            !helpMenuIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
+            ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+                event.key,
+            )
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            const wl = sortedOpenWindows();
+            if (wl.length === 0) return;
+
+            if (navViewMode === "overview") {
+                if (event.key === "ArrowLeft") {
+                    overviewFocusedWindowIndex = Math.max(
+                        0,
+                        overviewFocusedWindowIndex - 1,
+                    );
+                    const win = wl[overviewFocusedWindowIndex];
+                    const tabs = [...win.tabs].sort(
+                        (a, b) => a.index - b.index,
+                    );
+                    selectedTab =
+                        tabs.find((t) => t.active) ?? tabs[0] ?? selectedTab;
+                } else if (event.key === "ArrowRight") {
+                    overviewFocusedWindowIndex = Math.min(
+                        wl.length - 1,
+                        overviewFocusedWindowIndex + 1,
+                    );
+                    const win = wl[overviewFocusedWindowIndex];
+                    const tabs = [...win.tabs].sort(
+                        (a, b) => a.index - b.index,
+                    );
+                    selectedTab =
+                        tabs.find((t) => t.active) ?? tabs[0] ?? selectedTab;
+                } else if (event.key === "ArrowUp") {
+                    const win = wl[overviewFocusedWindowIndex];
+                    const tabs = [...win.tabs].sort(
+                        (a, b) => a.index - b.index,
+                    );
+                    const refTab =
+                        selectedTab?.windowId === win.id
+                            ? selectedTab
+                            : (tabs.find((t) => t.active) ?? tabs[0]);
+                    const cur = tabs.findIndex((t) => t.id === refTab?.id);
+                    const idx = cur >= 0 ? cur : 0;
+                    selectedTab = tabs[Math.max(0, idx - 1)];
+                } else if (event.key === "ArrowDown") {
+                    const win = wl[overviewFocusedWindowIndex];
+                    const tabs = [...win.tabs].sort(
+                        (a, b) => a.index - b.index,
+                    );
+                    const refTab =
+                        selectedTab?.windowId === win.id
+                            ? selectedTab
+                            : (tabs.find((t) => t.active) ?? tabs[0]);
+                    const cur = tabs.findIndex((t) => t.id === refTab?.id);
+                    const idx = cur >= 0 ? cur : 0;
+                    selectedTab = tabs[Math.min(tabs.length - 1, idx + 1)];
+                }
+                return;
+            }
+
+            const nk = tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
+            if (nk === "history") {
+                if (event.key === "ArrowUp") {
+                    tabsViewRef?.historyMoveSelection?.(-1);
+                } else if (event.key === "ArrowDown") {
+                    tabsViewRef?.historyMoveSelection?.(1);
+                }
+                return;
+            }
+            if (nk === "create") {
+                return;
+            }
+
+            const totalSlides = wl.length + 2;
+            if (event.key === "ArrowLeft") {
+                navSlideIndex = Math.max(0, navSlideIndex - 1);
+            } else if (event.key === "ArrowRight") {
+                navSlideIndex = Math.min(totalSlides - 1, navSlideIndex + 1);
+            } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                const win = wl[navSlideIndex - 1] ?? wl[0];
                 const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
                 const refTab =
                     selectedTab && selectedTab.windowId === win.id
                         ? selectedTab
-                        : tabs.find((t) => t.active) ?? tabs[0];
+                        : (tabs.find((t) => t.active) ?? tabs[0]);
                 if (event.key === "ArrowUp" && tabs.length > 0) {
                     const cur = tabs.findIndex((t) => t.id === refTab?.id);
                     const idx = cur >= 0 ? cur : 0;
@@ -538,105 +853,92 @@
                     const cur = tabs.findIndex((t) => t.id === refTab?.id);
                     const idx = cur >= 0 ? cur : 0;
                     selectedTab = tabs[Math.min(tabs.length - 1, idx + 1)];
-                } else if (event.key === "ArrowLeft" && wl.length > 0) {
-                    navCarouselIndex = Math.max(0, navCarouselIndex - 1);
-                } else if (event.key === "ArrowRight" && wl.length > 0) {
-                    navCarouselIndex = Math.min(
-                        wl.length - 1,
-                        navCarouselIndex + 1,
-                    );
-                }
-            } else if (
-                ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
-                    event.key,
-                )
-            ) {
-                event.preventDefault();
-                event.stopPropagation();
-                enterTabSwitchingMode();
-                await tabStore.init();
-                const tabs = [...get(currentWindowTabs)].sort(
-                    (a, b) => a.index - b.index,
-                );
-                const windowsList = [...get(windows)]
-                    .filter((w) => w.tabs.length > 0)
-                    .sort((a, b) => a.id - b.id);
-                const activeId = get(activeTabId);
-                const activeWinId = get(activeWindowId);
-
-                if (event.key === "ArrowUp" && tabs.length > 0) {
-                    const currentIndex = tabs.findIndex(
-                        (t) => t.id === activeId,
-                    );
-                    const idx = currentIndex >= 0 ? currentIndex : 0;
-                    const prevIndex = (idx - 1 + tabs.length) % tabs.length;
-                    await chromeService.activateTab(tabs[prevIndex].id);
-                    await tabStore.refreshState();
-                    chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
-                } else if (event.key === "ArrowDown" && tabs.length > 0) {
-                    const currentIndex = tabs.findIndex(
-                        (t) => t.id === activeId,
-                    );
-                    const idx = currentIndex >= 0 ? currentIndex : 0;
-                    const nextIndex = (idx + 1) % tabs.length;
-                    await chromeService.activateTab(tabs[nextIndex].id);
-                    await tabStore.refreshState();
-                    chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
-                } else if (
-                    event.key === "ArrowLeft" &&
-                    windowsList.length > 0
-                ) {
-                    const currentIndex = windowsList.findIndex(
-                        (w) => w.id === activeWinId,
-                    );
-                    const idx = currentIndex >= 0 ? currentIndex : 0;
-                    const prevIndex =
-                        (idx - 1 + windowsList.length) % windowsList.length;
-                    await chromeService.focusWindow(windowsList[prevIndex].id);
-                    await tabStore.refreshState();
-                    chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
-                } else if (
-                    event.key === "ArrowRight" &&
-                    windowsList.length > 0
-                ) {
-                    const currentIndex = windowsList.findIndex(
-                        (w) => w.id === activeWinId,
-                    );
-                    const idx = currentIndex >= 0 ? currentIndex : 0;
-                    const nextIndex = (idx + 1) % windowsList.length;
-                    await chromeService.focusWindow(windowsList[nextIndex].id);
-                    await tabStore.refreshState();
-                    chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
-                }
-                resetTabSwitchingDismissTimeout();
-            } else if (event.key === ",") {
-                // (<) used to navigate to previous history item
-                event.preventDefault();
-                event.stopPropagation();
-                history.back();
-            } else if (event.key === ".") {
-                // (>) used to navigate to next history item
-                event.preventDefault();
-                event.stopPropagation();
-                history.forward();
-            } else {
-                let textSelection = window.getSelection().toString();
-                if (textSelection.length > 0) {
-                    if (event.key === "c") {
-                        navigator.clipboard.writeText(textSelection);
-                    }
-                    if (event.key === "g") {
-                        window.open(
-                            "https://www.google.com/search?q=" + textSelection,
-                        );
-                    }
                 }
             }
+        } else if (
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
+            ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
+                event.key,
+            )
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            enterTabSwitchingMode();
+            await tabStore.init();
+            const tabs = [...get(currentWindowTabs)].sort(
+                (a, b) => a.index - b.index,
+            );
+            const windowsList = [...get(windows)]
+                .filter((w) => w.tabs.length > 0)
+                .sort((a, b) => a.id - b.id);
+            const activeId = get(activeTabId);
+            const activeWinId = get(activeWindowId);
+
+            if (event.key === "ArrowUp" && tabs.length > 0) {
+                const currentIndex = tabs.findIndex((t) => t.id === activeId);
+                const idx = currentIndex >= 0 ? currentIndex : 0;
+                const prevIndex = (idx - 1 + tabs.length) % tabs.length;
+                await chromeService.activateTab(tabs[prevIndex].id);
+                await tabStore.refreshState();
+                chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
+            } else if (event.key === "ArrowDown" && tabs.length > 0) {
+                const currentIndex = tabs.findIndex((t) => t.id === activeId);
+                const idx = currentIndex >= 0 ? currentIndex : 0;
+                const nextIndex = (idx + 1) % tabs.length;
+                await chromeService.activateTab(tabs[nextIndex].id);
+                await tabStore.refreshState();
+                chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
+            } else if (event.key === "ArrowLeft" && windowsList.length > 0) {
+                const currentIndex = windowsList.findIndex(
+                    (w) => w.id === activeWinId,
+                );
+                const idx = currentIndex >= 0 ? currentIndex : 0;
+                const prevIndex =
+                    (idx - 1 + windowsList.length) % windowsList.length;
+                await chromeService.focusWindow(windowsList[prevIndex].id);
+                await tabStore.refreshState();
+                chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
+            } else if (event.key === "ArrowRight" && windowsList.length > 0) {
+                const currentIndex = windowsList.findIndex(
+                    (w) => w.id === activeWinId,
+                );
+                const idx = currentIndex >= 0 ? currentIndex : 0;
+                const nextIndex = (idx + 1) % windowsList.length;
+                await chromeService.focusWindow(windowsList[nextIndex].id);
+                await tabStore.refreshState();
+                chrome.runtime.sendMessage({ type: "TAB_SWITCHED" });
+            }
+            resetTabSwitchingDismissTimeout();
+        } else if (event.key === ",") {
+            // (<) used to navigate to previous history item
+            event.preventDefault();
+            event.stopPropagation();
+            history.back();
+        } else if (event.key === ".") {
+            // (>) used to navigate to next history item
+            event.preventDefault();
+            event.stopPropagation();
+            history.forward();
+        } else {
+            let textSelection = window.getSelection().toString();
+            if (textSelection.length > 0) {
+                if (event.key === "c") {
+                    navigator.clipboard.writeText(textSelection);
+                }
+                if (event.key === "g") {
+                    window.open(
+                        "https://www.google.com/search?q=" + textSelection,
+                    );
+                }
+            }
+        }
     }
 
     async function moveSelectedTabToNextWindow(event) {
         event.preventDefault();
         event.stopPropagation();
+        if (navEdgeSlideKind() !== "window") return;
         const windowsList = [...get(windows)]
             .filter((w) => w.tabs.length > 0)
             .sort((a, b) => a.id - b.id);
@@ -667,22 +969,49 @@
     }
 
     function handleKeyup(event) {
-        if (event.key === " ") {
+        const isSpace = event.key === " " || event.code === "Space";
+        if (isSpace) {
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
         }
+
+        if (isSpace && spaceArm) {
+            spaceArm = false;
+            clearSpaceLongPressTimer();
+            if (spaceLongPressFired) {
+                spaceLongPressFired = false;
+                return;
+            }
+            void handleSpaceShortPress();
+            return;
+        }
+
+        if (
+            (event.key === "Meta" || event.key === "OS") &&
+            metaLongPressTimer
+        ) {
+            clearMetaLongPressTimer();
+        }
+        if (event.key === "Alt" && altLongPressTimer) {
+            clearAltLongPressTimer();
+        }
+        if (event.key === "Control" && ctrlLongPressTimer) {
+            clearCtrlLongPressTimer();
+        }
     }
 
     function handleWheel(event) {
-        if (tabMenuIsOpen) return;
+        if (tabMenuIsOpen || systemMenuIsOpen || settingsPageIsOpen) return;
         if (!isInNavigationMode && !event.metaKey) {
             if (showActiveTabInfo && event.deltaY > 0) {
                 hideActiveTabInfo();
             }
+            return;
         }
-        if (isInNavigationMode || event.metaKey) {
-            let isVerticalScroll =
+
+        if (isInNavigationMode) {
+            const isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);
             if (isVerticalScroll) {
                 handleVerticalTabScroll(event.deltaY);
@@ -691,35 +1020,73 @@
             }
             event.preventDefault();
             event.stopPropagation();
-
-            // Prevent default scrolling behavior
+            return;
         }
+
+        const isVerticalScroll =
+            Math.abs(event.deltaX) < Math.abs(event.deltaY);
+        if (isVerticalScroll) {
+            handleVerticalTabScroll(event.deltaY);
+        } else {
+            handleHorizontalCarouselScroll(event.deltaX);
+        }
+        event.preventDefault();
+        event.stopPropagation();
     }
 
     let scrollDelta = 0;
     let scrollSelectDelta = 0;
     let scrollCarouselDelta = 0;
-    const SCROLL_SELECT_THRESHOLD = 33;
     let scrollEndTimeout = null;
 
     function handleVerticalTabScroll(scrollUpdate) {
         if (isInNavigationMode) {
             const wl = sortedOpenWindows();
             if (!wl.length) return;
-            const win = wl[navCarouselIndex] ?? wl[0];
+
+            if (navViewMode === "overview") {
+                const win = wl[overviewFocusedWindowIndex];
+                if (!win?.tabs?.length) return;
+                const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
+                const refTab =
+                    selectedTab && selectedTab.windowId === win.id
+                        ? selectedTab
+                        : (tabs.find((t) => t.active) ?? tabs[0]);
+                if (!refTab) return;
+                const currentIndex = tabs.findIndex((t) => t.id === refTab.id);
+                const idx = currentIndex >= 0 ? currentIndex : 0;
+                scrollSelectDelta += scrollUpdate;
+                if (
+                    Math.abs(scrollSelectDelta) >= scrollVerticalThreshold
+                ) {
+                    const direction = scrollSelectDelta > 0 ? -1 : 1;
+                    scrollSelectDelta = 0;
+                    const nextIndex = Math.max(
+                        0,
+                        Math.min(tabs.length - 1, idx + direction),
+                    );
+                    selectedTab = tabs[nextIndex];
+                }
+                return;
+            }
+
+            const nk = navEdgeSlideKind();
+            if (nk === "history" || nk === "create") return;
+
+            const win = wl[navSlideIndex - 1];
             if (!win?.tabs?.length) return;
 
             const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
             const refTab =
                 selectedTab && selectedTab.windowId === win.id
                     ? selectedTab
-                    : tabs.find((t) => t.active) ?? tabs[0];
+                    : (tabs.find((t) => t.active) ?? tabs[0]);
             if (!refTab) return;
             const currentIndex = tabs.findIndex((t) => t.id === refTab.id);
             const idx = currentIndex >= 0 ? currentIndex : 0;
 
             scrollSelectDelta += scrollUpdate;
-            if (Math.abs(scrollSelectDelta) >= SCROLL_SELECT_THRESHOLD) {
+            if (Math.abs(scrollSelectDelta) >= scrollVerticalThreshold) {
                 const direction = scrollSelectDelta > 0 ? -1 : 1;
                 scrollSelectDelta = 0;
                 const nextIndex = Math.max(
@@ -739,14 +1106,32 @@
     function handleHorizontalCarouselScroll(deltaX) {
         if (!isInNavigationMode) return;
         const wl = sortedOpenWindows();
-        if (wl.length < 2) return;
+        if (navViewMode === "overview") {
+            if (wl.length < 2) return;
+            scrollCarouselDelta += deltaX;
+            if (Math.abs(scrollCarouselDelta) >= scrollHorizontalThreshold) {
+                const step = scrollCarouselDelta > 0 ? -1 : 1;
+                scrollCarouselDelta = 0;
+                overviewFocusedWindowIndex = Math.max(
+                    0,
+                    Math.min(wl.length - 1, overviewFocusedWindowIndex + step),
+                );
+                const win = wl[overviewFocusedWindowIndex];
+                const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
+                selectedTab =
+                    tabs.find((t) => t.active) ?? tabs[0] ?? selectedTab;
+            }
+            return;
+        }
+        const totalSlides = wl.length + 2;
+        if (totalSlides < 2) return;
         scrollCarouselDelta += deltaX;
-        if (Math.abs(scrollCarouselDelta) >= SCROLL_SELECT_THRESHOLD) {
-            const step = scrollCarouselDelta > 0 ? 1 : -1;
+        if (Math.abs(scrollCarouselDelta) >= scrollHorizontalThreshold) {
+            const step = scrollCarouselDelta > 0 ? -1 : 1;
             scrollCarouselDelta = 0;
-            navCarouselIndex = Math.max(
+            navSlideIndex = Math.max(
                 0,
-                Math.min(wl.length - 1, navCarouselIndex + step),
+                Math.min(totalSlides - 1, navSlideIndex + step),
             );
         }
     }
@@ -790,15 +1175,55 @@
 {#if helpMenuIsOpen}
     <HelpMenu onClose={() => (helpMenuIsOpen = false)} />
 {/if}
+{#if settingsPageIsOpen}
+    <SettingsPage
+        {settings}
+        onChange={saveSettingsPatch}
+        onClose={() => (settingsPageIsOpen = false)}
+    />
+{/if}
 {#if systemMenuIsOpen}
     <SystemMenu />
 {:else if isInNavigationMode && !tabMenuIsOpen}
     {#if !(omniboxOpenedStandalone && omniboxIsOpen)}
         <TabsView
+            bind:this={tabsViewRef}
+            includeEdgeSlides={true}
             windows={$windows}
             bind:currentTab
             bind:selectedTab
-            bind:carouselIndex={navCarouselIndex}
+            bind:slideIndex={navSlideIndex}
+            bind:viewMode={navViewMode}
+            bind:overviewFocusedWindowIndex
+            on:quicksave={async () => {
+                if (!selectedTab) return;
+                const url = await chromeService.copyTabUrl(selectedTab.id);
+                if (url) await navigator.clipboard.writeText(url);
+            }}
+            on:quickfocus={async () => {
+                if (!selectedTab) return;
+                await chromeService.focusWindow(selectedTab.windowId);
+                await tabStore.refreshState();
+            }}
+            on:quickclose={async () => {
+                if (!selectedTab) return;
+                await tabStore.closeTab(selectedTab.id);
+                await tabStore.refreshState();
+                selectedTab = currentTab;
+            }}
+            on:quickmenu={() => {
+                tabMenuIsOpen = true;
+            }}
+            on:activatetab={async (e) => {
+                const tab = e.detail?.tab;
+                if (!tab?.id) return;
+                await chromeService.activateTab(tab.id);
+                isInNavigationMode = false;
+                chrome.runtime.sendMessage({
+                    type: "NAVIGATION_MODE",
+                    isInNavigationMode,
+                });
+            }}
         />
     {/if}
     {#if omniboxIsOpen}
@@ -818,11 +1243,10 @@
         currentWindowTabs={$currentWindowTabs}
         activeTabId={$activeTabId}
     />
-{:else if (showActiveTabInfo || tabMenuIsOpen) && (isInNavigationMode ? selectedTab : currentTab)}
+{:else if (showActiveTabInfo || tabMenuIsOpen) && (isInNavigationMode ? (navEdgeSlideKind() === "history" || navEdgeSlideKind() === "create" ? null : selectedTab) : currentTab)}
     <div in:fly={{ y: 20, duration: 150 }} out:fly={{ y: 20, duration: 200 }}>
         <ActiveTabInfo
             tab={isInNavigationMode ? selectedTab : currentTab}
-            mode="auto"
             on:menuRequest={() => {
                 tabMenuIsOpen = true;
             }}
@@ -839,7 +1263,9 @@
 
     :global(#swift-tabs-root) {
         position: relative;
-        z-index: 999999;
+        z-index: 2147483647;
+        font-family: system-ui;
+        color: white;
     }
     :global(button) {
         background: none;

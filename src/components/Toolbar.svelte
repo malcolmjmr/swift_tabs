@@ -30,7 +30,7 @@
     let showQuickActions = false;
     let showResourceView = false;
     let showMenu = false;
-    let viewType = "icon";
+    let viewMode = "icon";
     onMount(() => {
         init();
     });
@@ -88,7 +88,8 @@
             windows={openWindows}
             bind:currentTab
             bind:selectedTab
-            {viewType}
+            bind:viewMode
+            includeEdgeSlides={false}
         />
     {/if}
 
@@ -102,7 +103,7 @@
                 bind:showMenu
                 bind:showTabsView
                 bind:showResourceView
-                bind:viewType
+                bind:viewMode
             />
         {/if}
     </div>

@@ -5,7 +5,7 @@
     export let showMenu = false;
     export let showTabsView = false;
     export let showResourceView = false;
-    export let viewType = "icon";
+    export let viewMode = "icon";
     function handleCreateTab() {
         chromeService.createTab({ active: true });
     }
@@ -28,12 +28,14 @@
     <div
         class="navigation-bar-item"
         on:click={() =>
-            (viewType =
-                viewType === "icon"
+            (viewMode =
+                viewMode === "icon"
                     ? "list"
-                    : viewType === "list"
+                    : viewMode === "list"
                       ? "gallery"
-                      : "icon")}
+                      : viewMode === "gallery"
+                        ? "overview"
+                        : "icon")}
     >
         <span class="material-symbols-rounded">select_window_2</span>
     </div>

@@ -24,7 +24,7 @@
         <section>
             <h3>Navigation</h3>
             <ul>
-                <li><kbd>Space</kbd> — Enter / exit navigation mode (activate selected tab)</li>
+                <li><kbd>Space</kbd> (short press) — Enter / exit navigation mode (activate selected tab on release)</li>
                 <li><kbd>↑</kbd> <kbd>↓</kbd> — Previous / next tab in window</li>
                 <li><kbd>←</kbd> <kbd>→</kbd> — Previous / next window</li>
                 <li><kbd>,</kbd> / <kbd>.</kbd> — Back / forward in history</li>
@@ -34,6 +34,7 @@
         <section>
             <h3>Omnibox</h3>
             <ul>
+                <li><kbd>Space</kbd> (hold) — Open omnibox (enters navigation mode if needed)</li>
                 <li><kbd>o</kbd> / <kbd>n</kbd> — Open omnibox (enters navigation mode if needed)</li>
                 <li>In navigation mode, type any character — Search tabs</li>
             </ul>
@@ -42,13 +43,25 @@
             <h3>Tab menu</h3>
             <ul>
                 <li><kbd>a</kbd> / <kbd>m</kbd> — Open tab actions menu</li>
-                <li><kbd>⌘</kbd> (hold) — Open tab menu in navigation mode</li>
+                <li><kbd>⌘</kbd> (hold) — Open tab menu when a tab is available</li>
+            </ul>
+        </section>
+        <section>
+            <h3>Group menu</h3>
+            <ul>
+                <li><kbd>⌥</kbd> (hold) — Open group menu (system menu)</li>
+            </ul>
+        </section>
+        <section>
+            <h3>Settings</h3>
+            <ul>
+                <li><kbd>Ctrl</kbd> (hold) — Open settings (long-press delay, scroll thresholds)</li>
             </ul>
         </section>
         <section>
             <h3>Idle tab actions</h3>
             <p class="help-menu__note">
-                When not in navigation mode, omnibox, tab menu, tab switching overlay,
+                When not in navigation mode, omnibox, tab menu, group menu, settings, tab switching overlay,
                 or this help panel (no modifier keys except <kbd>?</kbd> as noted):
             </p>
             <ul>

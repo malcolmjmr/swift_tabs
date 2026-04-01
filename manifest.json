@@ -8,6 +8,7 @@
         "tabGroups",
         "bookmarks",
         "history",
+        "sessions",
         "storage",
         "scripting"
     ],

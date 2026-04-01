@@ -22,7 +22,7 @@
 |------|-------------|-----------------|--------------|
 | 1 | User presses **Space** key | System captures event, prevents page scroll | `isInNavigationMode = true` |
 | 2 | System refreshes tab state | Fetches current tabs from Chrome API | `windows` store updated |
-| 3 | TabsView overlay appears | Card at bottom-right: horizontal carousel with **one window’s tabs** visible; dot row below when multiple windows | `TabsView` mounted, `navCarouselIndex` set to current tab’s window |
+| 3 | TabsView overlay appears | Card at bottom-right: **History** slide, **window** slides, **Create** slide; quick actions; dot row when multiple windows | `TabsView` mounted with `includeEdgeSlides`, `navSlideIndex` = current tab’s window slide (1-based) |
 | 4 | Current tab is highlighted | Visual indicator for active/selected tab in that window’s list | `selectedTab` aligned with visible window (typically active tab in that window) |
 
 #### Navigation: Selecting Tabs (Vertical)
@@ -38,32 +38,34 @@
 
 #### Navigation: Selecting Windows (Horizontal carousel)
 
-While in Navigation Mode, horizontal input **only changes which window’s tab list is shown** in TabsView. It does **not** call `focusWindow` or show the Tab Switching Modal. The user switches the real focused window by activating a tab (**Space**) in another window.
+While in Navigation Mode, horizontal input changes which **slide** is shown: **History**, a **window’s** tab list, or **Create**. It does **not** call `focusWindow` or show the Tab Switching Modal when stepping between **windows** (same as before). The user switches the real focused window by activating a tab (**Space**) in another window. In **Overview** `viewMode`, horizontal input moves **overview** window focus instead of the horizontal track.
 
 | Step | User Action | System Response | State Change |
 |------|-------------|-----------------|--------------|
 | 1 | User scrolls **horizontally** (with Meta, or primary scroll axis horizontal) | `deltaX` accumulates | `scrollCarouselDelta` accumulates |
-| 2 | Threshold reached | Carousel moves to next/previous window | `navCarouselIndex` updates (clamped at 0 and last window); TabsView track scrolls to snap |
-| 3 | TabsView updates | New slide shows that window’s tabs; dots reflect active window | `selectedTab` defaults to that window’s active tab (or first tab) |
-| 4 | User may tap a **dot** | Jump to that window’s slide | `navCarouselIndex` = dot index |
+| 2 | Threshold reached | Carousel moves to next/previous **slide** | `navSlideIndex` updates (clamped); track scrolls to snap; in Overview, `overviewFocusedWindowIndex` steps |
+| 3 | TabsView updates | New slide shows History, that window’s tabs, or Create; dots reflect **window** slide when applicable | `selectedTab` defaults to that window’s active tab (or first tab) on window slides |
+| 4 | User may tap a **dot** | Jump to that **window’s** slide | `navSlideIndex` = dot index (+1 when edge slides on) |
 
-#### Activation: Opening Selected Tab
-
-| Step | User Action | System Response | State Change |
-|------|-------------|-----------------|--------------|
-| 1 | User presses **Space** (while in Navigation Mode) | System activates selected tab | Chrome API: `tabs.update(selectedTab.id, { active: true })` |
-| 2 | Navigation Mode exits | TabsView overlay fades out | `isInNavigationMode = false` |
-| 3 | ActiveTabInfo displays | Shows info for newly active tab | `activeTabInfoVisible = true` |
-| 4 | User returns to normal browsing | Page content fully visible | All overlays dismissed |
-
-#### Alternative Activation: Opening Omnibox
+#### Activation: Opening Selected Tab, History Row, or New Window
 
 | Step | User Action | System Response | State Change |
 |------|-------------|-----------------|--------------|
-| 1 | User types any character while in Navigation Mode | System detects printable key | `omniboxQuery = event.key` |
-| 2 | Omnibox appears | Search interface overlays page | `omniboxOpen = true` |
-| 3 | User types search query | Query updates in real-time | `omniboxQuery` updates |
-| 4 | User presses **Enter** | System searches or navigates | Depends on query type |
+| 1 | User presses **Space** on a **window** or **Overview** slide | System activates `selectedTab` | Chrome API: activate tab; exit navigation mode |
+| 1b | User presses **Space** on **History** slide | Restores selected session / activates group / opens saved folder | `chrome.sessions.restore` / group focus / bookmarks UI |
+| 1c | User presses **Space** on **Create** slide | Opens new empty window | `CREATE_EMPTY_WINDOW`; exit navigation mode |
+| 2 | Navigation Mode exits (tab / create paths) | TabsView overlay dismisses | `isInNavigationMode = false` |
+| 3 | ActiveTabInfo displays (when applicable) | Shows info for newly active tab | `activeTabInfoVisible = true` |
+
+#### Opening Omnibox (Navigation Mode)
+
+Printable keys **do not** open the omnibox (avoids clashes with TabsView quick actions **S** / **F** / **x** / **M**).
+
+| Step | User Action | System Response | State Change |
+|------|-------------|-----------------|--------------|
+| 1 | User presses **o** or **n** (see idle / global rules) | Omnibox opens; navigation mode if needed | `omniboxIsOpen = true` |
+| 2 | User types in omnibox | Query updates | `omniboxQuery` updates |
+| 3 | User presses **Enter** | Search or navigate | Depends on query type |
 
 #### Exit: Leaving Navigation Mode
 
@@ -211,7 +213,9 @@ const SCROLL_SELECT_THRESHOLD = 33; // pixels; used for vertical tab steps and h
 // App.svelte (main state)
 let isInNavigationMode = false;
 let selectedTab = null;
-let navCarouselIndex = 0; // index into sorted open windows (matches TabsView carousel)
+let navSlideIndex = 0;       // 0 history, 1..N windows, N+1 create (with edge slides)
+let navViewMode = "list";   // list | icon | gallery | overview
+let overviewFocusedWindowIndex = 0;
 let scrollSelectDelta = 0;
 let scrollCarouselDelta = 0;
 let omniboxIsOpen = false;
@@ -219,8 +223,8 @@ let omniboxQuery = "";
 
 import { windows } from './stores/tabStore';
 
-// Vertical scroll: tabs in windowsList[navCarouselIndex], not necessarily Chrome’s focused window
-// Horizontal scroll: step navCarouselIndex (clamped); TabsView binds carouselIndex
+// Vertical scroll: tabs in visible window (slide index) or Overview focused window
+// Horizontal scroll: step navSlideIndex or overviewFocusedWindowIndex in Overview mode
 ```
 
 ---
@@ -230,15 +234,21 @@ import { windows } from './stores/tabStore';
 | Input | Context | Action |
 |-------|---------|--------|
 | **Space** | Not in input, not in Navigation Mode | Enter Navigation Mode |
-| **Space** | In Navigation Mode | Activate selected tab, exit mode |
+| **Space** | In Navigation Mode, window / Overview slide | Activate `selectedTab`, exit mode |
+| **Space** | In Navigation Mode, History slide | Activate selected history row (restore / group / folder) |
+| **Space** | In Navigation Mode, Create slide | New empty window, exit mode |
 | **Escape** | Navigation Mode | Does **not** exit Navigation Mode by itself; closes help / tab-switching overlay / Active Tab Info when applicable |
-| **↑ / ↓** | In Navigation Mode (omnibox & tab menu closed) | Move `selectedTab` within tabs of the **carousel-visible** window (clamped, no wrap) |
-| **← / →** | In Navigation Mode (omnibox & tab menu closed) | Step **carousel** to previous/next window (`navCarouselIndex`, clamped at ends); does not `focusWindow` |
-| **Meta + Scroll Vertical** | In Navigation Mode | Same as ↑ / ↓ for the visible window’s tabs |
-| **Meta + Scroll Horizontal** | In Navigation Mode | Step carousel window index (same as ← / →) |
-| **Any printable char** | In Navigation Mode, not in Omnibox | Open Omnibox, type character |
-| **Enter** | In Navigation Mode, tab selected | Move selected tab to next window |
-| **Delete / Backspace** | In Navigation Mode, tab selected | Close selected tab |
+| **↑ / ↓** | In Navigation Mode, window slide (omnibox & tab menu closed) | Move `selectedTab` within that window’s tabs (clamped, no wrap) |
+| **↑ / ↓** | In Navigation Mode, History slide | Move selection in history list |
+| **↑ / ↓** | In Navigation Mode, Overview | Move `selectedTab` within **focused** window row |
+| **← / →** | In Navigation Mode, not Overview | Step **slides** (History ↔ windows ↔ Create), clamped |
+| **← / →** | In Navigation Mode, Overview | Step `overviewFocusedWindowIndex` |
+| **Meta + Scroll Vertical** | In Navigation Mode | Same as ↑ / ↓ for current context (window, Overview, or ignored on History/Create) |
+| **Meta + Scroll Horizontal** | In Navigation Mode | Same as ← / → for current context |
+| **Printable keys** | In Navigation Mode | **Do not** open omnibox (use **o** / **n**) |
+| **s** / **f** / **x** | In Navigation Mode, window slide, tab menu & omnibox closed | Quick actions: save/share (copy URL), focus window, close tab |
+| **Enter** | In Navigation Mode, tab selected, window slide | Move selected tab to next window |
+| **Delete / Backspace** | In Navigation Mode, tab selected, window slide | Close selected tab |
 | **Enter** | Idle (see preconditions above) | Move active tab to new window |
 | **Delete / Backspace** | Idle, empty text selection, not repeat | Close active tab |
 | **/** | Idle | Open keyboard shortcuts help |
@@ -284,14 +294,15 @@ import { windows } from './stores/tabStore';
 - [interaction_tab_switching.md](./interaction_tab_switching.md) - Quick switching without full UI
 - [interaction_tab_info_display.md](./interaction_tab_info_display.md) - Shows during and after Navigation Mode
 - [interaction_tab_menu.md](./interaction_tab_menu.md) - Accessed via Meta key from Navigation Mode
-- [interaction_omnibox.md](./interaction_omnibox.md) - Opened by typing in Navigation Mode (or **o** / **n**)
+- [interaction_omnibox.md](./interaction_omnibox.md) - Opened by **o** / **n** (not by arbitrary typing while TabsView quick actions are active)
 
 ---
 
 ### Code References
 
 **Components:**
-- `src/components/tabs_view/TabsView.svelte` - Navigation overlay (carousel, dots, `bind:carouselIndex`)
+- `src/components/tabs_view/TabsView.svelte` - Navigation overlay (History / windows / Create, overview, picker, quick actions, `bind:slideIndex`)
+- `src/components/tabs_view/HistoryView.svelte` - Recently closed, groups, saved session folders
 - `src/components/tabs_view/ListView.svelte` (and icon/gallery variants) - Tab list inside each slide
 - `ActiveTabInfo.svelte` - Context display during navigation
 - `Omnibox.svelte` - Search interface
