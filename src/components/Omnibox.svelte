@@ -642,10 +642,13 @@
                                                 }}
                                             />
                                             <span class="app-grid-title"
-                                                >{app.title || app.domain}</span
-                                            >
-                                            <span class="app-grid-subtitle"
-                                                >{app.visitCount} visits</span
+                                                >{app.domain
+                                                    .replace("www.", "")
+                                                    .replace("https://", "")
+                                                    .replace(
+                                                        "http://",
+                                                        "",
+                                                    )}</span
                                             >
                                         </button>
                                     {/each}
@@ -777,7 +780,7 @@
     }
 
     .section-strip-padding {
-        width: 10px;
+        width: 15px;
     }
 
     .section-strip-scroll .section-chip {
@@ -963,23 +966,22 @@
         color: var(--st-text-primary, #fff);
     }
 
-    /* Apps Grid Layout */
     .apps-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        display: flex;
+        flex-wrap: wrap;
         gap: 12px;
-        padding: 12px 16px;
+        padding: 0px 10px;
     }
 
     .app-grid-item {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
         align-items: center;
-        gap: 6px;
-        padding: 12px 8px;
+        gap: 8px;
+        padding: 6px 10px;
         border: none;
         background: transparent;
-        border-radius: 8px;
+        border-radius: 12px;
         cursor: pointer;
         transition: background 0.15s;
         color: var(--st-text-primary, #fff);
@@ -991,17 +993,16 @@
     }
 
     .app-grid-icon {
-        width: 40px;
-        height: 40px;
+        width: 25px;
+        height: 25px;
         border-radius: 8px;
         object-fit: contain;
     }
 
     .app-grid-title {
-        font-size: 11px;
+        font-size: 14px;
         font-weight: 500;
         text-align: center;
-        max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;

@@ -15,13 +15,15 @@
 
 <div class="list-view">
     <div class="list-view-container">
+        <div class="list-view-padding"></div>
         {#each tabs as tab (tab.id)}
             <div
                 class="list-view-item"
                 role="button"
                 tabindex="0"
                 class:active={currentTab != null && tab.id === currentTab.id}
-                class:selected={selectedTab != null && tab.id === selectedTab.id}
+                class:selected={selectedTab != null &&
+                    tab.id === selectedTab.id}
                 on:click={() => onRowClick(tab)}
                 on:keydown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -37,13 +39,16 @@
                         class="list-view-item-icon"
                     />
                 {:else}
-                    <span class="list-view-item-icon-fallback" aria-hidden="true"
+                    <span
+                        class="list-view-item-icon-fallback"
+                        aria-hidden="true"
                         >{(tab.title || "?").charAt(0).toUpperCase()}</span
                     >
                 {/if}
                 <div class="list-view-item-title">{tab.title}</div>
             </div>
         {/each}
+        <div class="list-view-padding"></div>
     </div>
 </div>
 
@@ -56,13 +61,17 @@
         border-radius: 6px;
         background: transparent;
         font-size: 14px;
-        font-family: system-ui, -apple-system, sans-serif;
+        font-family:
+            system-ui,
+            -apple-system,
+            sans-serif;
     }
 
     .list-view-container {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        padding: 0px 7px;
+        gap: 5px;
     }
 
     .list-view-item {
@@ -73,9 +82,10 @@
         gap: 10px;
         padding: 8px 10px;
         border-radius: 6px;
-        margin: 0;
+
         transition: background 0.1s;
         width: 100%;
+
         box-sizing: border-box;
         cursor: pointer;
         color: #ffffff;
@@ -123,5 +133,9 @@
         flex: 1;
         text-align: left;
         color: #ffffff;
+    }
+
+    .list-view-padding {
+        height: 3px;
     }
 </style>

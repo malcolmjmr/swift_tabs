@@ -226,75 +226,6 @@
 
 {#if nWindows > 0}
     <div class="tabs-view-card">
-        {#if kind === "window" && viewMode !== "overview"}
-            <div
-                class="quick-actions"
-                role="toolbar"
-                aria-label="Window actions"
-            >
-                <button
-                    type="button"
-                    class="qa-btn"
-                    on:click={() => dispatch("quicksave")}
-                >
-                    S<span style="opacity: 0.5; margin-left: 0.5px;">ave</span>
-                </button>
-                <button
-                    type="button"
-                    class="qa-btn"
-                    on:click={() => dispatch("quickfocus")}
-                >
-                    F<span style="opacity: 0.5; margin-left: 0.5px;">ocus</span>
-                </button>
-                <button
-                    type="button"
-                    class="qa-btn"
-                    on:click={() => dispatch("quickclose")}
-                >
-                    <span style="opacity: 0.5; margin-right: 0.5px;">Clos</span
-                    >e
-                </button>
-                <button
-                    type="button"
-                    class="qa-btn"
-                    on:click={() => dispatch("quickmenu")}
-                >
-                    V<span style="opacity: 0.5; margin-left: 0.5px;">iew</span>
-                </button>
-                <button
-                    type="button"
-                    class="qa-btn"
-                    on:click={() => dispatch("quickmenu")}
-                >
-                    M<span style="opacity: 0.5; margin-left: 0.5px;">enu</span>
-                </button>
-            </div>
-        {/if}
-
-        {#if viewPickerRevealed}
-            <div class="view-picker" role="tablist" aria-label="View mode">
-                {#each [{ id: "list", label: "List" }, { id: "icon", label: "Icons" }, { id: "gallery", label: "Gallery" }, { id: "overview", label: "Overview" }] as opt (opt.id)}
-                    <button
-                        type="button"
-                        role="tab"
-                        class="view-chip"
-                        class:active={viewMode === opt.id}
-                        aria-selected={viewMode === opt.id}
-                        on:click={() => setViewMode(opt.id)}
-                    >
-                        {opt.label}
-                    </button>
-                {/each}
-                <button
-                    type="button"
-                    class="view-chip dismiss"
-                    on:click={() => (viewPickerRevealed = false)}
-                >
-                    Done
-                </button>
-            </div>
-        {/if}
-
         {#if viewMode === "overview"}
             <div class="overview-wrap">
                 {#each windowsList as win, wi (win.id)}
@@ -337,34 +268,38 @@
                 {#each windowsList as win (win.id)}
                     {@const tabs = sortedTabs(win)}
                     <section class="slide">
-                        <OverscrollRevealHost
-                            variant="slide"
-                            enabled={!viewPickerRevealed}
-                            on:reveal={() => (viewPickerRevealed = true)}
-                        >
-                            {#if viewMode === "icon"}
-                                <IconView
-                                    {tabs}
-                                    bind:selectedTab
-                                    bind:currentTab
-                                    on:activatetab={forwardTabActivate}
-                                />
-                            {:else if viewMode === "gallery"}
-                                <GalleryView
-                                    {tabs}
-                                    {currentTab}
-                                    bind:selectedTab
-                                    on:activatetab={forwardTabActivate}
-                                />
-                            {:else}
-                                <ListView
-                                    {tabs}
-                                    bind:currentTab
-                                    bind:selectedTab
-                                    on:activatetab={forwardTabActivate}
-                                />
-                            {/if}
-                        </OverscrollRevealHost>
+                        {#if windowsList.length > 1 || win.name}
+                            <div class="group-header">
+                                <div class="group-label">
+                                    {win.name || tabs.length + " tabs"}
+                                </div>
+                                <div class="group-menu-key">
+                                    <kbd>⌥</kbd>
+                                </div>
+                            </div>
+                        {/if}
+                        {#if viewMode === "icon"}
+                            <IconView
+                                {tabs}
+                                bind:selectedTab
+                                bind:currentTab
+                                on:activatetab={forwardTabActivate}
+                            />
+                        {:else if viewMode === "gallery"}
+                            <GalleryView
+                                {tabs}
+                                {currentTab}
+                                bind:selectedTab
+                                on:activatetab={forwardTabActivate}
+                            />
+                        {:else}
+                            <ListView
+                                {tabs}
+                                bind:currentTab
+                                bind:selectedTab
+                                on:activatetab={forwardTabActivate}
+                            />
+                        {/if}
                     </section>
                 {/each}
                 {#if includeEdgeSlides}
@@ -372,49 +307,53 @@
                         <div class="create-slide">
                             <div class="edge-label">New window</div>
                             <p class="create-hint">
-                                Press <kbd>Space</kbd> to open a new window.
+                                Tap <kbd>Space</kbd> to open a new window.
+                            </p>
+                            <p class="create-hint">
+                                Hold <kbd>Space</kbd> to open a new incognito window.
                             </p>
                         </div>
                     </section>
                 {/if}
             </div>
         {/if}
-
-        <div
-            class="tabs-footer"
-            role="toolbar"
-            aria-label="Navigation shortcuts"
-        >
-            <button
-                type="button"
-                class="footer-icon-btn"
-                aria-label="History"
-                on:click={goFooterHistory}
+        {#if nWindows > 1}
+            <div
+                class="tabs-footer"
+                role="toolbar"
+                aria-label="Navigation shortcuts"
             >
-                <span class="material-symbols-rounded">history</span>
-            </button>
-            <div class="dots" role="tablist" aria-label="Open windows">
-                {#each windowsList as _, i}
-                    <button
-                        type="button"
-                        class="dot"
-                        class:active={i === dotActiveIndex}
-                        role="tab"
-                        aria-selected={i === dotActiveIndex}
-                        aria-label="Window {i + 1}"
-                        on:click={() => goToWindowDot(i)}
-                    />
-                {/each}
+                <button
+                    type="button"
+                    class="footer-icon-btn"
+                    aria-label="History"
+                    on:click={goFooterHistory}
+                >
+                    <span class="material-symbols-rounded">history</span>
+                </button>
+                <div class="dots" role="tablist" aria-label="Open windows">
+                    {#each windowsList as _, i}
+                        <button
+                            type="button"
+                            class="dot"
+                            class:active={i === dotActiveIndex}
+                            role="tab"
+                            aria-selected={i === dotActiveIndex}
+                            aria-label="Window {i + 1}"
+                            on:click={() => goToWindowDot(i)}
+                        />
+                    {/each}
+                </div>
+                <button
+                    type="button"
+                    class="footer-icon-btn"
+                    aria-label="New window"
+                    on:click={goFooterAdd}
+                >
+                    <span class="material-symbols-rounded">add</span>
+                </button>
             </div>
-            <button
-                type="button"
-                class="footer-icon-btn"
-                aria-label="New window"
-                on:click={goFooterAdd}
-            >
-                <span class="material-symbols-rounded">add</span>
-            </button>
-        </div>
+        {/if}
     </div>
 {/if}
 
@@ -442,65 +381,6 @@
         overflow-y: auto;
     }
 
-    .quick-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 8px;
-        padding: 0px 10px;
-        border-bottom: 1px solid
-            var(--st-border-color, rgba(255, 255, 255, 0.1));
-        width: calc(100% - 20px);
-        justify-content: space-between;
-        align-items: center;
-        height: 40px;
-    }
-
-    .qa-btn {
-        font-size: 15px;
-        color: white;
-        height: 30px;
-        padding: 4px 6px;
-        border-radius: 4px;
-        cursor: pointer;
-        border: none;
-    }
-
-    .qa-btn:hover {
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.12));
-    }
-
-    .view-picker {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: nowrap;
-        gap: 6px;
-        padding: 8px;
-        overflow-x: auto;
-        border-bottom: 1px solid
-            var(--st-border-color, rgba(255, 255, 255, 0.1));
-        scrollbar-width: thin;
-    }
-
-    .view-chip {
-        flex: 0 0 auto;
-        font-size: 12px;
-        padding: 6px 10px;
-        border-radius: 6px;
-        cursor: pointer;
-        color: var(--st-text-muted, #aaa);
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
-        border: 1px solid transparent;
-    }
-
-    .view-chip.active {
-        color: var(--st-text-primary, #fff);
-        border-color: var(--st-border-color, rgba(255, 255, 255, 0.2));
-    }
-
-    .view-chip.dismiss {
-        margin-left: auto;
-    }
-
     .track {
         display: flex;
         flex-direction: row;
@@ -521,6 +401,37 @@
         box-sizing: border-box;
     }
 
+    .group-header {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+    }
+
+    .group-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--st-text-muted, #a0a0a0);
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .group-menu-key {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+
+    .group-menu-key kbd {
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+    }
+
     .edge-label {
         font-size: 12px;
         font-weight: 600;
@@ -536,6 +447,9 @@
         align-items: center;
         justify-content: center;
         text-align: center;
+        height: 100%;
+        width: 100%;
+        gap: 20px;
     }
 
     .create-hint {
