@@ -1,11 +1,16 @@
 <script>
     import { createEventDispatcher } from "svelte";
+    import TabItemBadges from "./TabItemBadges.svelte";
+    import { lastActiveTabId } from "./tabIndicators.js";
 
     export let tabs;
+    /** Kept for parent bind:compat; window-active styling uses tab.active */
     export let currentTab = null;
     export let selectedTab = null;
 
     const dispatch = createEventDispatcher();
+
+    $: lastActiveId = lastActiveTabId(tabs);
 
     function onRowClick(tab) {
         selectedTab = tab;
@@ -21,9 +26,15 @@
                 class="list-view-item"
                 role="button"
                 tabindex="0"
-                class:active={currentTab != null && tab.id === currentTab.id}
+                class:active={tab.active === true}
+                class:last-active={lastActiveId != null &&
+                    tab.id === lastActiveId}
                 class:selected={selectedTab != null &&
                     tab.id === selectedTab.id}
+                data-st-extension-current-tab={currentTab != null &&
+                tab.id === currentTab.id
+                    ? "true"
+                    : undefined}
                 on:click={() => onRowClick(tab)}
                 on:keydown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -46,6 +57,7 @@
                     >
                 {/if}
                 <div class="list-view-item-title">{tab.title}</div>
+                <TabItemBadges {tab} variant="inline" />
             </div>
         {/each}
         <div class="list-view-padding"></div>
@@ -82,11 +94,14 @@
         gap: 10px;
         padding: 8px 10px;
         border-radius: 6px;
+        box-sizing: border-box;
+        box-shadow: inset 0 0 0 1px transparent;
 
-        transition: background 0.1s;
+        transition:
+            background 0.1s,
+            box-shadow 0.1s;
         width: 100%;
 
-        box-sizing: border-box;
         cursor: pointer;
         color: #ffffff;
     }
@@ -97,6 +112,15 @@
 
     .list-view-item.active {
         background: transparent;
+        box-shadow: inset 0 0 0 1px var(--st-accent, #999999);
+    }
+
+    .list-view-item.last-active {
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
+    .list-view-item.active.last-active {
+        box-shadow: inset 0 0 0 1px var(--st-accent, #999999);
     }
 
     .list-view-item.selected {

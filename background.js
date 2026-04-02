@@ -32,6 +32,14 @@ function onTabUpdated(tabId, changeInfo, tab) {
         changeInfo: changeInfo,
         tab: tab,
     });
+    // Content scripts do not receive runtime.sendMessage; broadcast so tab store
+    // (audible / mutedInfo) and TabsView stay in sync.
+    if (
+        changeInfo.audible !== undefined ||
+        changeInfo.mutedInfo !== undefined
+    ) {
+        void broadcastTabsDataChanged();
+    }
 }
 
 async function onTabActivated(activeInfo) {
@@ -44,6 +52,7 @@ async function onTabActivated(activeInfo) {
     } catch (e) {
         // Content script may not be loaded (e.g. chrome://, new tab)
     }
+    void broadcastTabsDataChanged();
 }
 
 

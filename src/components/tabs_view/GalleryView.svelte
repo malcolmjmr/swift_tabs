@@ -1,11 +1,16 @@
 <script>
     import { createEventDispatcher } from "svelte";
+    import TabItemBadges from "./TabItemBadges.svelte";
+    import { lastActiveTabId } from "./tabIndicators.js";
 
     export let tabs;
+    /** Kept for parent bind:compat */
     export let currentTab = null;
     export let selectedTab = null;
 
     const dispatch = createEventDispatcher();
+
+    $: lastActiveId = lastActiveTabId(tabs);
 
     function hostname(url) {
         if (!url) return "";
@@ -30,7 +35,13 @@
                 role="button"
                 tabindex="0"
                 class:selected={selectedTab != null && tab.id === selectedTab.id}
-                class:active={currentTab != null && tab.id === currentTab.id}
+                class:active={tab.active === true}
+                class:last-active={lastActiveId != null &&
+                    tab.id === lastActiveId}
+                data-st-extension-current-tab={currentTab != null &&
+                tab.id === currentTab.id
+                    ? "true"
+                    : undefined}
                 on:click={() => onTileClick(tab)}
                 on:keydown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
@@ -39,17 +50,20 @@
                     }
                 }}
             >
-                {#if tab.favIconUrl}
-                    <img
-                        src={tab.favIconUrl}
-                        alt=""
-                        class="gallery-view-item-icon"
-                    />
-                {:else}
-                    <span class="gallery-fallback"
-                        >{(tab.title || "?").charAt(0).toUpperCase()}</span
-                    >
-                {/if}
+                <div class="gallery-icon-slot">
+                    {#if tab.favIconUrl}
+                        <img
+                            src={tab.favIconUrl}
+                            alt=""
+                            class="gallery-view-item-icon"
+                        />
+                    {:else}
+                        <span class="gallery-fallback"
+                            >{(tab.title || "?").charAt(0).toUpperCase()}</span
+                        >
+                    {/if}
+                    <TabItemBadges {tab} variant="overlay" />
+                </div>
                 <div class="gallery-view-item-title">{tab.title}</div>
                 <div class="gallery-view-item-url">{hostname(tab.url)}</div>
             </div>
@@ -83,20 +97,39 @@
         padding: 10px;
         border-radius: 8px;
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
-        transition: background 0.1s;
+        transition:
+            background 0.1s,
+            box-shadow 0.1s;
         cursor: pointer;
         width: calc(50% - 6px);
         min-width: 120px;
         max-width: 100%;
         box-sizing: border-box;
-        overflow: hidden;
-        border: 1px solid transparent;
+        box-shadow: inset 0 0 0 1px transparent;
     }
 
-    .gallery-view-item.selected,
+    .gallery-view-item.last-active {
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    }
+
     .gallery-view-item.active {
-        border-color: var(--st-border-color, rgba(255, 255, 255, 0.12));
+        box-shadow: inset 0 0 0 2px var(--st-accent, #7cb8ff);
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+    }
+
+    .gallery-view-item.selected {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+    }
+
+    .gallery-view-item.active.last-active {
+        box-shadow: inset 0 0 0 2px var(--st-accent, #7cb8ff);
+    }
+
+    .gallery-icon-slot {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        flex-shrink: 0;
     }
 
     .gallery-view-item-icon {
