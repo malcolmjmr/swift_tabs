@@ -64,6 +64,10 @@ export const chromeService = {
         return this.sendMessage('MOVE_TAB', { tabId, targetWindowId });
     },
 
+    async moveTabWithinWindow(tabId, delta) {
+        return this.sendMessage('MOVE_TAB_WITHIN_WINDOW', { tabId, delta });
+    },
+
     async focusWindow(windowId) {
         return this.sendMessage('FOCUS_WINDOW', { windowId });
     },
@@ -76,8 +80,27 @@ export const chromeService = {
         return this.sendMessage('DISCARD_TAB', { tabId });
     },
 
-    async createWindowWithTab(tabId) {
-        return this.sendMessage('CREATE_WINDOW', { tabId });
+    /**
+     * @param {number} tabId
+     * @param {{ focused?: boolean }} [options] — default focused: false
+     */
+    async createWindowWithTab(tabId, options = {}) {
+        return this.sendMessage("CREATE_WINDOW", {
+            tabId,
+            focused: options.focused === true,
+        });
+    },
+
+    /**
+     * Move multiple tabs from the same window into a new window (order preserved).
+     * @param {number[]} tabIds
+     * @param {{ focused?: boolean }} [options]
+     */
+    async createWindowWithTabs(tabIds, options = {}) {
+        return this.sendMessage("CREATE_WINDOW", {
+            tabIds,
+            focused: options.focused === true,
+        });
     },
 
     async copyTabUrl(tabId) {

@@ -1,5 +1,5 @@
 <script>
-    import { onMount, onDestroy } from "svelte";
+    import { onMount, onDestroy, tick } from "svelte";
     import { fly } from "svelte/transition";
     import { get } from "svelte/store";
     import Toolbar from "./components/Toolbar.svelte";
@@ -116,8 +116,7 @@
 
     async function handleSpaceShortPress() {
         if (isInNavigationMode) {
-            const nk =
-                tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
+            const nk = tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
             if (nk === "create") {
                 await chromeService.createEmptyWindow();
                 await tabStore.refreshState();
@@ -303,8 +302,129 @@
         return "window";
     }
 
+    const NEW_WINDOW_CONTEXT_TIMEOUT_MS = 30000;
+
+    /** Batch "move to new window" target while in navigation mode */
+    let newWindowContextId = null;
+    let newWindowCreatedAt = null;
+
+    /** @type {Set<number>} */
+    let persistentTabSelection = new Set();
+    $: multiSelectedIds = [...persistentTabSelection];
+    let lastNavWindowIdForContext = null;
+    let lastOverviewIndexForContext = -1;
+
+    let secondaryButtonDown = false;
+    let secondaryGestureHadScroll = false;
+    let moveModeVerticalAccum = 0;
+    let moveModeHorizontalAccum = 0;
+    /** Last pointer position while secondary button is down (trackpad right-drag uses movement, not wheel). */
+    let moveModeLastClientX = null;
+    let moveModeLastClientY = null;
+    let moveModeHadCrossWindowMove = false;
+
+    function findTabById(tabId) {
+        for (const w of get(windows)) {
+            const t = w.tabs?.find((x) => x.id === tabId);
+            if (t) return t;
+        }
+        return null;
+    }
+
+    /** Focus the nav carousel / overview on a given window (edge slides: slide 1..N). */
+    function syncNavSlideToWindowId(windowId) {
+        const wl = sortedOpenWindows();
+        const idx = wl.findIndex((w) => w.id === windowId);
+        if (idx < 0) return;
+        if (navViewMode === "overview") {
+            overviewFocusedWindowIndex = idx;
+        } else {
+            navSlideIndex = idx + 1;
+        }
+    }
+
+    function handleContextMenuCapture(event) {
+        if (!isInNavigationMode) return;
+        if (
+            tabMenuIsOpen ||
+            omniboxIsOpen ||
+            systemMenuIsOpen ||
+            settingsPageIsOpen
+        ) {
+            return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    }
+
+    function resetNewWindowBatchContext() {
+        newWindowContextId = null;
+        newWindowCreatedAt = null;
+    }
+
+    function clearPersistentTabSelection() {
+        persistentTabSelection = new Set();
+    }
+
+    function togglePersistentTabSelection(tabId) {
+        if (tabId == null) return;
+        const next = new Set(persistentTabSelection);
+        if (next.has(tabId)) next.delete(tabId);
+        else next.add(tabId);
+        persistentTabSelection = next;
+    }
+
+    /** Window whose tabs are shown in the current nav slide (nav uses edge slides). */
+    function currentNavWindow() {
+        const wl = sortedOpenWindows();
+        if (wl.length === 0) return null;
+        if (navViewMode === "overview")
+            return wl[overviewFocusedWindowIndex] ?? null;
+        if (navEdgeSlideKind() !== "window") return null;
+        return wl[navSlideIndex - 1] ?? null;
+    }
+
+    $: if (isInNavigationMode && navViewMode !== "overview") {
+        const wl = sortedOpenWindows();
+        const kind = navEdgeSlideKind();
+        const win = kind === "window" ? wl[navSlideIndex - 1] : null;
+        const wid = win?.id ?? null;
+        if (kind !== "window") {
+            if (lastNavWindowIdForContext != null) {
+                resetNewWindowBatchContext();
+                clearPersistentTabSelection();
+            }
+            lastNavWindowIdForContext = null;
+        } else {
+            if (
+                lastNavWindowIdForContext != null &&
+                wid != null &&
+                wid !== lastNavWindowIdForContext
+            ) {
+                resetNewWindowBatchContext();
+                clearPersistentTabSelection();
+            }
+            lastNavWindowIdForContext = wid;
+        }
+    } else if (isInNavigationMode && navViewMode === "overview") {
+        const idx = overviewFocusedWindowIndex;
+        if (
+            lastOverviewIndexForContext >= 0 &&
+            idx !== lastOverviewIndexForContext
+        ) {
+            resetNewWindowBatchContext();
+            clearPersistentTabSelection();
+        }
+        lastOverviewIndexForContext = idx;
+    } else if (!isInNavigationMode) {
+        lastNavWindowIdForContext = null;
+        lastOverviewIndexForContext = -1;
+    }
+
     async function onNavigationModeMessage(message) {
         isInNavigationMode = message.isInNavigationMode;
+        resetNewWindowBatchContext();
+        clearPersistentTabSelection();
         if (isInNavigationMode) {
             await tabStore.refreshState();
             const wl = sortedOpenWindows();
@@ -349,13 +469,125 @@
         }
     }
 
-    function handleMouseDown(event) {}
-
-    function handleMouseUp(event) {
+    function handleMouseDown(event) {
+        if (!isInNavigationMode) return;
         if (event.button === 2) {
-            // Right-click button
+            // TODO: long-press secondary button → LLM related-tab selection (future).
+            secondaryButtonDown = true;
+            secondaryGestureHadScroll = false;
+            moveModeVerticalAccum = 0;
+            moveModeHorizontalAccum = 0;
+            moveModeLastClientX = event.clientX;
+            moveModeLastClientY = event.clientY;
+            if (navEdgeSlideKind() === "window") {
+                moveModeHadCrossWindowMove = false;
+            }
+        }
+    }
+
+    /**
+     * Move mode: vertical delta → reorder tab; horizontal → adjacent window.
+     * Used for wheel (mouse) and pointer drag (trackpad secondary-click + slide).
+     */
+    function applyMoveModeDeltas(deltaX, deltaY) {
+        if (!selectedTab || navEdgeSlideKind() !== "window") return;
+        if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) return;
+        secondaryGestureHadScroll = true;
+        const verticalDominant = Math.abs(deltaY) >= Math.abs(deltaX);
+        if (verticalDominant) {
+            moveModeVerticalAccum += deltaY;
+            if (Math.abs(moveModeVerticalAccum) >= scrollVerticalThreshold) {
+                const dir = moveModeVerticalAccum > 0 ? 1 : -1;
+                moveModeVerticalAccum = 0;
+                void tabStore.moveTabWithinWindow(selectedTab.id, dir);
+            }
+        } else {
+            moveModeHorizontalAccum += deltaX;
+            if (
+                Math.abs(moveModeHorizontalAccum) >= scrollHorizontalThreshold
+            ) {
+                const dirToWindow = moveModeHorizontalAccum > 0 ? 1 : -1;
+                moveModeHorizontalAccum = 0;
+                void moveSelectedTabAdjacentWindow(null, dirToWindow);
+            }
+        }
+    }
+
+    function handleMouseMove(event) {
+        if (tabMenuIsOpen || systemMenuIsOpen || settingsPageIsOpen) return;
+        if (
+            !isInNavigationMode ||
+            !(event.buttons & 2) ||
+            navEdgeSlideKind() !== "window" ||
+            !selectedTab
+        ) {
+            return;
+        }
+        let dx = 0;
+        let dy = 0;
+        const mx = event.movementX;
+        const my = event.movementY;
+        if (mx != null && my != null && (mx !== 0 || my !== 0)) {
+            dx = mx;
+            dy = my;
+        } else if (moveModeLastClientX != null && moveModeLastClientY != null) {
+            dx = event.clientX - moveModeLastClientX;
+            dy = event.clientY - moveModeLastClientY;
+        } else {
+            moveModeLastClientX = event.clientX;
+            moveModeLastClientY = event.clientY;
+            return;
+        }
+        moveModeLastClientX = event.clientX;
+        moveModeLastClientY = event.clientY;
+        applyMoveModeDeltas(dx, dy);
+    }
+
+    async function handleMouseUp(event) {
+        if (event.button === 2) {
             clearTimeout(rightClickTimer);
-            console.log("right click mouse up");
+            if (
+                isInNavigationMode &&
+                secondaryButtonDown &&
+                !secondaryGestureHadScroll &&
+                selectedTab &&
+                navEdgeSlideKind() === "window"
+            ) {
+                togglePersistentTabSelection(selectedTab.id);
+            }
+            if (isInNavigationMode && moveModeHadCrossWindowMove) {
+                await tabStore.refreshState();
+                const focusedWinId = get(activeWindowId);
+                const wl = sortedOpenWindows();
+                if (focusedWinId != null) {
+                    const fw = wl.find((w) => w.id === focusedWinId);
+                    if (fw?.tabs?.length) {
+                        syncNavSlideToWindowId(focusedWinId);
+                        await tick();
+                        const tabs = [...fw.tabs].sort(
+                            (a, b) => a.index - b.index,
+                        );
+                        selectedTab =
+                            tabs.find((t) => t.active) ??
+                            tabs[0] ??
+                            selectedTab;
+                    }
+                } else if (wl.length > 0) {
+                    syncNavSlideToWindowId(wl[0].id);
+                    await tick();
+                    const tabs = [...wl[0].tabs].sort(
+                        (a, b) => a.index - b.index,
+                    );
+                    selectedTab =
+                        tabs.find((t) => t.active) ?? tabs[0] ?? selectedTab;
+                }
+            }
+            moveModeHadCrossWindowMove = false;
+            secondaryButtonDown = false;
+            moveModeVerticalAccum = 0;
+            moveModeHorizontalAccum = 0;
+            moveModeLastClientX = null;
+            moveModeLastClientY = null;
         }
     }
 
@@ -438,11 +670,7 @@
         if (altLongPressTimer && event.altKey && event.key !== "Alt") {
             clearAltLongPressTimer();
         }
-        if (
-            ctrlLongPressTimer &&
-            event.ctrlKey &&
-            event.key !== "Control"
-        ) {
+        if (ctrlLongPressTimer && event.ctrlKey && event.key !== "Control") {
             clearCtrlLongPressTimer();
         }
 
@@ -575,20 +803,21 @@
             event.preventDefault();
             event.stopPropagation();
             if (event.key === "s" || event.key === "S") {
-                (async () => {
-                    const url = await chromeService.copyTabUrl(selectedTab.id);
-                    if (url) await navigator.clipboard.writeText(url);
-                })();
+                // (async () => {
+                //     const url = await chromeService.copyTabUrl(selectedTab.id);
+                //     if (url) await navigator.clipboard.writeText(url);
+                // })();
             } else if (event.key === "f" || event.key === "F") {
-                (async () => {
-                    await chromeService.focusWindow(selectedTab.windowId);
-                    await tabStore.refreshState();
-                })();
             } else if (event.key === "x" || event.key === "X") {
                 (async () => {
                     await tabStore.closeTab(selectedTab.id);
                     await tabStore.refreshState();
-                    selectedTab = currentTab;
+                    // set selectedTab to tab with next highest index
+                    const tabs = [...window.tabs].sort(
+                        (a, b) => a.index - b.index,
+                    );
+                    selectedTab =
+                        tabs.find((t) => t.active) ?? tabs[0] ?? selectedTab;
                 })();
             }
         } else if (event.key === " ") {
@@ -718,6 +947,7 @@
         ) {
             event.preventDefault();
             event.stopPropagation();
+            const closedId = selectedTab.id;
             const windowsList = [...get(windows)]
                 .filter((w) => w.tabs.length > 0)
                 .sort((a, b) => a.id - b.id);
@@ -725,10 +955,13 @@
                 (w) => w.id === selectedTab.windowId,
             );
             if (!window?.tabs?.length) return;
-            const tabs = [...window.tabs].sort((a, b) => a.index - b.index);
-            const currentIndex = tabs.findIndex((t) => t.id === selectedTab.id);
             await tabStore.closeTab(selectedTab.id);
             await tabStore.refreshState();
+            if (persistentTabSelection.has(closedId)) {
+                const next = new Set(persistentTabSelection);
+                next.delete(closedId);
+                persistentTabSelection = next;
+            }
             selectedTab = currentTab;
             // const updatedWindows = get(windows);
             // const updatedWindow = updatedWindows.find(
@@ -747,12 +980,31 @@
             //     selectedTab = null;
             // }
         } else if (
+            isInNavigationMode &&
+            !omniboxIsOpen &&
+            !tabMenuIsOpen &&
+            !helpMenuIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
+            selectedTab &&
+            navEdgeSlideKind() === "window" &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.repeat &&
+            (event.code === "ShiftLeft" || event.code === "ShiftRight")
+        ) {
+            // TODO: long-press Shift here could trigger LLM "related tabs" selection (future).
+            event.preventDefault();
+            event.stopPropagation();
+            togglePersistentTabSelection(selectedTab.id);
+        } else if (
             event.key === "Enter" &&
             isInNavigationMode &&
             selectedTab &&
             navEdgeSlideKind() === "window"
         ) {
-            moveSelectedTabToNextWindow(event);
+            await handleNavModeEnterToNewWindowBatch(event);
         } else if (
             isInNavigationMode &&
             !tabMenuIsOpen &&
@@ -935,36 +1187,148 @@
         }
     }
 
-    async function moveSelectedTabToNextWindow(event) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (navEdgeSlideKind() !== "window") return;
-        const windowsList = [...get(windows)]
-            .filter((w) => w.tabs.length > 0)
-            .sort((a, b) => a.id - b.id);
+    /**
+     * Move mode / horizontal: next window in sort order, or create a new window at the end (no wrap).
+     * Previous: prior window only; at first window, no-op (no wrap to last).
+     */
+    async function moveSelectedTabAdjacentWindow(event, direction) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        if (navEdgeSlideKind() !== "window" || !selectedTab) return;
+
+        const tabIdBeingMoved = selectedTab.id;
+        const windowsList = sortedOpenWindows();
         const currentWindowId = selectedTab.windowId;
         const currentWindowIndex = windowsList.findIndex(
             (w) => w.id === currentWindowId,
         );
-        if (currentWindowIndex < 0 || windowsList.length < 2) return;
-        const currentWindow = windowsList[currentWindowIndex];
-        const tabs = [...currentWindow.tabs].sort((a, b) => a.index - b.index);
-        const currentTabIndex = tabs.findIndex((t) => t.id === selectedTab.id);
-        const nextWindowIndex = (currentWindowIndex + 1) % windowsList.length;
-        const targetWindowId = windowsList[nextWindowIndex].id;
-        await tabStore.moveTab(selectedTab.id, targetWindowId);
+        if (currentWindowIndex < 0) return;
+
+        const goingNext = direction >= 0;
+
+        if (!goingNext && currentWindowIndex <= 0) {
+            return;
+        }
+
+        /** Keep OS focus here so the new/target window does not steal focus (Chrome often does anyway). */
+        const sourceWindowIdToKeepFocused = currentWindowId;
+
+        try {
+            if (goingNext && currentWindowIndex >= windowsList.length - 1) {
+                await chromeService.createWindowWithTab(tabIdBeingMoved, {
+                    focused: false,
+                });
+            } else if (goingNext) {
+                const targetWindowId = windowsList[currentWindowIndex + 1].id;
+                await tabStore.moveTab(tabIdBeingMoved, targetWindowId);
+            } else {
+                const targetWindowId = windowsList[currentWindowIndex - 1].id;
+                await tabStore.moveTab(tabIdBeingMoved, targetWindowId);
+            }
+        } catch (e) {
+            console.error(e);
+            return;
+        }
+
+        await tabStore.refreshState();
+
+        moveModeHadCrossWindowMove = true;
+
+        const movedTab = findTabById(tabIdBeingMoved);
+        if (movedTab) {
+            selectedTab = movedTab;
+            syncNavSlideToWindowId(movedTab.windowId);
+        }
+    }
+
+    async function handleNavModeEnterToNewWindowBatch(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (navEdgeSlideKind() !== "window" || !selectedTab) return;
+
+        const win = currentNavWindow();
+        if (!win?.tabs?.length) return;
+
+        await tabStore.refreshState();
+        const wl = get(windows);
+        const winFresh = wl.find((w) => w.id === win.id);
+        if (!winFresh?.tabs?.length) return;
+
+        const tabsSorted = [...winFresh.tabs].sort((a, b) => a.index - b.index);
+        const sourceWindowId = winFresh.id;
+
+        let targetTabs = [];
+        if (persistentTabSelection.size > 0) {
+            targetTabs = [...persistentTabSelection]
+                .map((id) => tabsSorted.find((t) => t.id === id))
+                .filter(Boolean)
+                .sort((a, b) => a.index - b.index);
+        }
+        if (targetTabs.length === 0) {
+            const t = tabsSorted.find((x) => x.id === selectedTab.id);
+            if (t) targetTabs = [t];
+        }
+        if (targetTabs.length === 0) return;
+
+        const targetIds = targetTabs.map((t) => t.id);
+        const sampleTab = targetTabs[0];
+        const currentIndexOfFirst = tabsSorted.findIndex(
+            (t) => t.id === targetIds[0],
+        );
+
+        let destId = null;
+        if (
+            newWindowContextId != null &&
+            Date.now() - newWindowCreatedAt <= NEW_WINDOW_CONTEXT_TIMEOUT_MS
+        ) {
+            const existing = wl.find((w) => w.id === newWindowContextId);
+            if (existing && !!existing.incognito === !!sampleTab.incognito) {
+                destId = newWindowContextId;
+            } else {
+                resetNewWindowBatchContext();
+            }
+        }
+
+        try {
+            if (destId == null) {
+                const newWin = await chromeService.createWindowWithTabs(
+                    targetIds,
+                    { focused: false },
+                );
+                newWindowContextId = newWin.id;
+                newWindowCreatedAt = Date.now();
+            } else {
+                for (const id of targetIds) {
+                    await tabStore.moveTab(id, destId);
+                }
+                newWindowCreatedAt = Date.now();
+            }
+        } catch (e) {
+            console.error(e);
+            resetNewWindowBatchContext();
+            return;
+        }
+
+        await tabStore.refreshState();
+        clearPersistentTabSelection();
+
         const updatedWindows = get(windows);
         const updatedWindow = updatedWindows.find(
-            (w) => w.id === currentWindowId,
+            (w) => w.id === sourceWindowId,
         );
         const updatedTabs = updatedWindow?.tabs
             ? [...updatedWindow.tabs].sort((a, b) => a.index - b.index)
             : [];
         if (updatedTabs.length > 0) {
-            const nextIndex = Math.min(currentTabIndex, updatedTabs.length - 1);
+            const nextIndex = Math.min(
+                Math.max(0, currentIndexOfFirst),
+                updatedTabs.length - 1,
+            );
             selectedTab = updatedTabs[nextIndex];
         } else {
-            selectedTab = null;
+            selectedTab = currentTab;
         }
     }
 
@@ -1010,6 +1374,24 @@
             return;
         }
 
+        if (
+            isInNavigationMode &&
+            event.buttons & 2 &&
+            navEdgeSlideKind() === "window" &&
+            selectedTab
+        ) {
+            const isVerticalScroll =
+                Math.abs(event.deltaX) < Math.abs(event.deltaY);
+            if (isVerticalScroll) {
+                applyMoveModeDeltas(0, event.deltaY);
+            } else {
+                applyMoveModeDeltas(event.deltaX, 0);
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
         if (isInNavigationMode) {
             const isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);
@@ -1034,7 +1416,6 @@
         event.stopPropagation();
     }
 
-    let scrollDelta = 0;
     let scrollSelectDelta = 0;
     let scrollCarouselDelta = 0;
     let scrollEndTimeout = null;
@@ -1056,9 +1437,7 @@
                 const currentIndex = tabs.findIndex((t) => t.id === refTab.id);
                 const idx = currentIndex >= 0 ? currentIndex : 0;
                 scrollSelectDelta += scrollUpdate;
-                if (
-                    Math.abs(scrollSelectDelta) >= scrollVerticalThreshold
-                ) {
+                if (Math.abs(scrollSelectDelta) >= scrollVerticalThreshold) {
                     const direction = scrollSelectDelta > 0 ? -1 : 1;
                     scrollSelectDelta = 0;
                     const nextIndex = Math.max(
@@ -1110,7 +1489,7 @@
             if (wl.length < 2) return;
             scrollCarouselDelta += deltaX;
             if (Math.abs(scrollCarouselDelta) >= scrollHorizontalThreshold) {
-                const step = scrollCarouselDelta > 0 ? -1 : 1;
+                const step = scrollCarouselDelta > 0 ? 1 : -1;
                 scrollCarouselDelta = 0;
                 overviewFocusedWindowIndex = Math.max(
                     0,
@@ -1127,7 +1506,7 @@
         if (totalSlides < 2) return;
         scrollCarouselDelta += deltaX;
         if (Math.abs(scrollCarouselDelta) >= scrollHorizontalThreshold) {
-            const step = scrollCarouselDelta > 0 ? -1 : 1;
+            const step = scrollCarouselDelta > 0 ? 1 : -1;
             scrollCarouselDelta = 0;
             navSlideIndex = Math.max(
                 0,
@@ -1135,31 +1514,15 @@
             );
         }
     }
-
-    async function handleHorizontalMoveTabScroll(scrollUpdate) {
-        console.log("handleHorizontalMoveTabScroll", scrollUpdate);
-        const scrollThreshold = 300;
-        const previousScrollDelta = scrollDelta;
-        scrollDelta += scrollUpdate;
-        if (Math.abs(scrollDelta) < scrollThreshold) {
-            return;
-        }
-
-        if (scrollDelta >= scrollThreshold) {
-            chromeService.closeTab(currentTab.id);
-        } else if (scrollDelta <= -scrollThreshold) {
-            //chromeService.moveTab(currentTab.id, targetWindowId);
-        }
-
-        scrollDelta = 0;
-    }
 </script>
 
 <svelte:window
     on:keydown|capture={handleKeydown}
     on:keyup|capture={handleKeyup}
     on:mousedown={handleMouseDown}
+    on:mousemove={handleMouseMove}
     on:mouseup={handleMouseUp}
+    on:contextmenu|capture={handleContextMenuCapture}
     on:contextmenu={handleRightClick}
     on:click={handleClick}
 />
@@ -1190,30 +1553,12 @@
             bind:this={tabsViewRef}
             includeEdgeSlides={true}
             windows={$windows}
+            {multiSelectedIds}
             bind:currentTab
             bind:selectedTab
             bind:slideIndex={navSlideIndex}
             bind:viewMode={navViewMode}
             bind:overviewFocusedWindowIndex
-            on:quicksave={async () => {
-                if (!selectedTab) return;
-                const url = await chromeService.copyTabUrl(selectedTab.id);
-                if (url) await navigator.clipboard.writeText(url);
-            }}
-            on:quickfocus={async () => {
-                if (!selectedTab) return;
-                await chromeService.focusWindow(selectedTab.windowId);
-                await tabStore.refreshState();
-            }}
-            on:quickclose={async () => {
-                if (!selectedTab) return;
-                await tabStore.closeTab(selectedTab.id);
-                await tabStore.refreshState();
-                selectedTab = currentTab;
-            }}
-            on:quickmenu={() => {
-                tabMenuIsOpen = true;
-            }}
             on:activatetab={async (e) => {
                 const tab = e.detail?.tab;
                 if (!tab?.id) return;

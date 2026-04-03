@@ -21,6 +21,8 @@
 
     export let currentTab = null;
     export let selectedTab = null;
+    /** Tab ids in persistent multi-select (navigation mode). */
+    export let multiSelectedIds = [];
 
     /**
      * Slide index: with edges — 0 history, 1..N windows, N+1 create.
@@ -249,6 +251,7 @@
                         </div>
                         <IconView
                             tabs={sortedTabs(win)}
+                            {multiSelectedIds}
                             bind:selectedTab
                             bind:currentTab
                             on:pick={() => onOverviewSectionFocus(wi)}
@@ -281,6 +284,7 @@
                         {#if viewMode === "icon"}
                             <IconView
                                 {tabs}
+                                {multiSelectedIds}
                                 bind:selectedTab
                                 bind:currentTab
                                 on:activatetab={forwardTabActivate}
@@ -288,6 +292,7 @@
                         {:else if viewMode === "gallery"}
                             <GalleryView
                                 {tabs}
+                                {multiSelectedIds}
                                 {currentTab}
                                 bind:selectedTab
                                 on:activatetab={forwardTabActivate}
@@ -295,6 +300,7 @@
                         {:else}
                             <ListView
                                 {tabs}
+                                {multiSelectedIds}
                                 bind:currentTab
                                 bind:selectedTab
                                 on:activatetab={forwardTabActivate}
@@ -370,7 +376,7 @@
         flex-direction: column;
         box-sizing: border-box;
         background: var(--st-bg-primary, rgba(30, 30, 30, 0.95));
-        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
+
         border-radius: 8px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         font-family:
@@ -406,30 +412,42 @@
         flex-direction: row;
         align-items: center;
         justify-content: space-between;
-        padding: 8px 10px;
+        padding: 0px 2px;
+        margin: 0px 10px;
+        height: 40px;
+        border-bottom: 1px solid #333333;
     }
 
     .group-label {
-        font-size: 12px;
+        font-size: 14px;
         font-weight: 600;
-        color: var(--st-text-muted, #a0a0a0);
-        margin-bottom: 8px;
+        color: #555555;
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .group-menu-key {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 2px 6px;
+        padding: 0px 2px;
         border-radius: 4px;
     }
 
     .group-menu-key kbd {
-        padding: 2px 6px;
+        padding: 0px 4px;
         border-radius: 4px;
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+        background: #333;
+        opacity: 0.8;
+        height: 20px;
+        width: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
     }
 
     .edge-label {
@@ -532,8 +550,9 @@
         flex-shrink: 0;
         height: 40px;
         width: calc(100% - 20px);
-        padding: 0px 10px;
-        border-top: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
+        padding: 0px;
+        margin: 0 10px;
+        border-top: 1px solid #333333;
     }
 
     .footer-icon-btn {
@@ -555,7 +574,7 @@
 
     .footer-icon-btn .material-symbols-rounded {
         font-size: 25px;
-        color: #ffffff;
+        color: #777;
         font-variation-settings:
             "FILL" 1,
             "wght" 500,

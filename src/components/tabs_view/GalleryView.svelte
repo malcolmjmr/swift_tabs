@@ -7,6 +7,7 @@
     /** Kept for parent bind:compat */
     export let currentTab = null;
     export let selectedTab = null;
+    export let multiSelectedIds = [];
 
     const dispatch = createEventDispatcher();
 
@@ -35,6 +36,7 @@
                 role="button"
                 tabindex="0"
                 class:selected={selectedTab != null && tab.id === selectedTab.id}
+                class:multi-selected={multiSelectedIds.includes(tab.id)}
                 class:active={tab.active === true}
                 class:last-active={lastActiveId != null &&
                     tab.id === lastActiveId}
@@ -119,6 +121,10 @@
 
     .gallery-view-item.selected {
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+    }
+
+    .gallery-view-item.multi-selected {
+        box-shadow: inset 0 0 0 2px rgba(120, 200, 255, 0.55);
     }
 
     .gallery-view-item.active.last-active {

@@ -7,6 +7,7 @@
     /** Kept for parent bind:compat */
     export let currentTab = null;
     export let selectedTab = null;
+    export let multiSelectedIds = [];
 
     const dispatch = createEventDispatcher();
 
@@ -35,6 +36,7 @@
                 class:last-active={lastActiveId != null &&
                     tab.id === lastActiveId}
                 class:selected={selectedTab != null && tab.id === selectedTab.id}
+                class:multi-selected={multiSelectedIds.includes(tab.id)}
                 data-st-extension-current-tab={currentTab != null &&
                 tab.id === currentTab.id
                     ? "true"
@@ -143,6 +145,13 @@
 
     .icon-view-item.selected {
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.12));
+        opacity: 1;
+    }
+
+    .icon-view-item.multi-selected {
+        box-shadow:
+            inset 0 0 0 2px rgba(120, 200, 255, 0.55),
+            inset 0 0 0 1px transparent;
         opacity: 1;
     }
 </style>

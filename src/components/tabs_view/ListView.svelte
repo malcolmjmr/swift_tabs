@@ -7,6 +7,7 @@
     /** Kept for parent bind:compat; window-active styling uses tab.active */
     export let currentTab = null;
     export let selectedTab = null;
+    export let multiSelectedIds = [];
 
     const dispatch = createEventDispatcher();
 
@@ -31,6 +32,7 @@
                     tab.id === lastActiveId}
                 class:selected={selectedTab != null &&
                     tab.id === selectedTab.id}
+                class:multi-selected={multiSelectedIds.includes(tab.id)}
                 data-st-extension-current-tab={currentTab != null &&
                 tab.id === currentTab.id
                     ? "true"
@@ -107,24 +109,27 @@
     }
 
     .list-view-item:hover {
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
+        background-color: #333333;
     }
 
     .list-view-item.active {
-        background: transparent;
-        box-shadow: inset 0 0 0 1px var(--st-accent, #999999);
+        background-color: #222222;
     }
 
     .list-view-item.last-active {
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+        /* background-color: #444444; */
     }
 
     .list-view-item.active.last-active {
-        box-shadow: inset 0 0 0 1px var(--st-accent, #999999);
+        /* background-color: #666666; */
     }
 
     .list-view-item.selected {
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
+        background-color: #333333;
+    }
+
+    .list-view-item.multi-selected {
+        box-shadow: inset 0 0 0 1px #555555;
     }
 
     .list-view-item-icon,

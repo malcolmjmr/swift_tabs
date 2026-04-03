@@ -29,6 +29,11 @@
                 <li><kbd>←</kbd> <kbd>→</kbd> — Previous / next window</li>
                 <li><kbd>,</kbd> / <kbd>.</kbd> — Back / forward in history</li>
                 <li><kbd>⌘</kbd> + scroll — Tab / window navigation (when applicable)</li>
+                <li><kbd>Enter</kbd> — Move selected tab(s) to a new window (unfocused); further <kbd>Enter</kbd> moves more tabs into the same new window until you change slide or exit</li>
+                <li><kbd>Shift</kbd> (tap) — Add or remove the highlighted tab from the multi-select set (batch move with <kbd>Enter</kbd>)</li>
+                <li>Right-click (quick, no scroll) — Same multi-select toggle as <kbd>Shift</kbd></li>
+                <li>Right-click hold + drag — Move mode: drag vertically to reorder; drag horizontally to move to the next/previous window (no wrap — at the last window, a new window is created). The carousel follows the tab’s window while dragging; the real browser focus stays on your current window; on release, the carousel snaps to the focused (active) window. Wheel still works if the device fires wheel while RMB is held.</li>
+                <li>Navigation mode — context menus on the page (e.g. video players) are suppressed so Swift Tabs gestures aren’t interrupted.</li>
             </ul>
         </section>
         <section>
@@ -66,7 +71,7 @@
             </p>
             <ul>
                 <li><kbd>Delete</kbd> / <kbd>Backspace</kbd> — Close current tab (when no text is selected)</li>
-                <li><kbd>Enter</kbd> — Move current tab to a new window</li>
+                <li><kbd>Enter</kbd> — Move current tab to a new window (new window stays in background)</li>
                 <li><kbd>c</kbd> — Copy current tab URL (when no text is selected)</li>
                 <li><kbd>r</kbd> — Reload tab</li>
                 <li><kbd>i</kbd> — Toggle active tab info strip</li>

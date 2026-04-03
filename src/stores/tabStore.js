@@ -92,6 +92,11 @@ const createTabStore = () => {
         async moveTab(tabId, targetWindowId) {
             await chromeService.moveTab(tabId, targetWindowId);
             await store.refreshState();
+        },
+
+        async moveTabWithinWindow(tabId, delta) {
+            await chromeService.moveTabWithinWindow(tabId, delta);
+            await store.refreshState();
         }
     };
 

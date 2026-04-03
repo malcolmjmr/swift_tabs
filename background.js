@@ -225,6 +225,23 @@ const chromeApiHandlers = {
         return { success: true };
     },
 
+    async MOVE_TAB_WITHIN_WINDOW({ tabId, delta }) {
+        const tab = await chrome.tabs.get(tabId);
+        const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+        const sorted = [...tabs].sort((a, b) => a.index - b.index);
+        const idx = sorted.findIndex((t) => t.id === tabId);
+        if (idx < 0) return { success: false };
+        const step = Number(delta) >= 0 ? 1 : -1;
+        const newIdx = Math.max(
+            0,
+            Math.min(sorted.length - 1, idx + step),
+        );
+        if (newIdx === idx) return { success: true };
+        await chrome.tabs.move(tabId, { index: newIdx });
+        broadcastTabsDataChanged();
+        return { success: true };
+    },
+
     async FOCUS_WINDOW({ windowId }) {
         await chrome.windows.update(windowId, { focused: true });
         return { success: true };
@@ -241,14 +258,43 @@ const chromeApiHandlers = {
         return { success: true };
     },
 
-    async CREATE_WINDOW({ tabId }) {
-        const tab = await chrome.tabs.get(tabId);
+    async CREATE_WINDOW({ tabId, tabIds, focused = false }) {
+        const useFocused = focused === true;
+        const ids =
+            Array.isArray(tabIds) && tabIds.length > 0
+                ? [...new Set(tabIds)]
+                : tabId != null
+                    ? [tabId]
+                    : [];
+
+        if (ids.length === 0) {
+            throw new Error("CREATE_WINDOW requires tabId or tabIds");
+        }
+
+        const metas = await Promise.all(ids.map((id) => chrome.tabs.get(id)));
+        const sourceWindowId = metas[0].windowId;
+        if (!metas.every((t) => t.windowId === sourceWindowId)) {
+            throw new Error("All tabs must be in the same window");
+        }
+        const sorted = [...metas].sort((a, b) => a.index - b.index);
+        const orderedIds = sorted.map((t) => t.id);
+
+        // Always open an empty window first, then tabs.move — avoids Chrome
+        // focusing/juggling tabId-on-create behavior.
         const newWindow = await chrome.windows.create({
-            tabId: tab.id,
-            focused: true,
+            url: "about:blank",
+            focused: useFocused,
+            incognito: metas[0].incognito === true,
         });
+        const blankTab = newWindow.tabs?.[0];
+        for (const id of orderedIds) {
+            await chrome.tabs.move(id, { windowId: newWindow.id, index: -1 });
+        }
+        if (blankTab?.id) {
+            await chrome.tabs.remove(blankTab.id);
+        }
         broadcastTabsDataChanged();
-        return newWindow;
+        return chrome.windows.get(newWindow.id, { populate: true });
     },
 
     async COPY_TAB_URL({ tabId }) {
@@ -342,7 +388,7 @@ const chromeApiHandlers = {
     },
 
     async CREATE_EMPTY_WINDOW() {
-        const w = await chrome.windows.create({ focused: true, url: "about:blank" });
+        const w = await chrome.windows.create({ focused: false, url: "about:blank" });
         broadcastTabsDataChanged();
         return w;
     },
