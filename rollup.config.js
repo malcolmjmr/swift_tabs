@@ -43,6 +43,38 @@ export default [
         }
     },
     {
+        input: 'src/content-dev.js',
+        output: {
+            sourcemap: !production,
+            format: 'iife',
+            name: 'contentDev',
+            file: 'dist/content-dev.js'
+        },
+        plugins: [
+            svelte({
+                compilerOptions: {
+                    dev: !production
+                }
+            }),
+
+            css({ output: 'content-dev.css' }),
+
+            resolve({
+                browser: true,
+                dedupe: ['svelte']
+            }),
+
+            commonjs(),
+
+            image(),
+
+            production && terser()
+        ],
+        watch: {
+            clearScreen: false
+        }
+    },
+    {
         input: 'src/planner.js',
         output: {
             sourcemap: !production,

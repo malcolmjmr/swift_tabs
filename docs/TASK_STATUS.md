@@ -1,6 +1,6 @@
 # Task Status
 
-**Last Completed:** Documentation synced for idle keyboard shortcuts (help **/** **?**, **a**/**m**, omnibox **o**/**n**, idle Delete/Backspace/Enter/c/r/i/d), `interaction_navigation_mode.md` / tab menu / omnibox / move-to-window / discoverability / find-in-page notes.
+**Last Completed:** Omnibox compartmentalized: shell only owns query, debounced filter text, track index, `visitedSectionIds`, picker/strip, URL Enter, wheel allowlist, and keyboard routing. Each section is a self-contained panel (`OmniboxSectionAppsPanel`, `OmniboxSectionNewsPanel`, `OmniboxSectionTrendingPanel`, tabs/bookmarks/history/highlights/placeholder) with internal fetch, results, selection, and `handleOmniboxKeydown` / optional `handleOmniboxBackspace` / `handleOmniboxEscape` / `consumesEmptyQueryStripArrows` (apps).
 
 **Next Task:** Tab Menu gaps per feature_tab_context_menu.md § Outstanding Items, or Find in Page (Feature 10).
 

@@ -163,4 +163,36 @@ export const chromeService = {
     async getAllBookmarks() {
         return this.sendMessage('GET_ALL_BOOKMARKS');
     },
+
+    async appsGetState() {
+        return this.sendMessage("APPS_GET_STATE");
+    },
+
+    async appsPutLayout(layout) {
+        return this.sendMessage("APPS_PUT_LAYOUT", { layout });
+    },
+
+    async appsPutApp(app) {
+        return this.sendMessage("APPS_PUT_APP", { app });
+    },
+
+    async appsDeleteApp(appId) {
+        return this.sendMessage("APPS_DELETE_APP", { appId });
+    },
+
+    async appsAddToHome(appId) {
+        return this.sendMessage("APPS_ADD_TO_HOME", { appId });
+    },
+
+    async appsMergeIntoFolder(appIdA, appIdB, title) {
+        return this.sendMessage("APPS_MERGE_INTO_FOLDER", {
+            appIdA,
+            appIdB,
+            title,
+        });
+    },
+
+    async appsRemoveFromHome(appId) {
+        return this.sendMessage("APPS_REMOVE_FROM_HOME", { appId });
+    },
 };

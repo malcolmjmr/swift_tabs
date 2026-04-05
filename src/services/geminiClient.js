@@ -368,3 +368,57 @@ export async function fetchTrendingTopicDetail(topic) {
     const footer = formatGroundingFooter(raw);
     return (text || "No summary returned.") + footer;
 }
+
+/** TTL for persisted app suggestions on the AppRecord (ms). */
+export const APP_SUGGESTIONS_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * Grounded updates / recommendations for an app (domain). Returns display text with source footer.
+ *
+ * @param {{ domain: string, title?: string }} app
+ * @returns {Promise<{ text: string }>}
+ */
+export async function fetchAppSuggestions(app) {
+    const apiKey = await getGeminiApiKey();
+    const domain = (app.domain || "").trim() || "unknown";
+    const title = (app.title || domain).trim();
+
+    const systemInstruction =
+        "You find fresh, relevant updates about a website or product. Use Google Search. " +
+        "Be factual; only claim what sources support. Output valid JSON only, no markdown fences.";
+
+    const userText =
+        `Site domain: ${domain}\nUser-visible title: ${title}\n\n` +
+        "Return a JSON object with key \"bullets\": an array of 4–6 objects. Each object has " +
+        '"text" (one concise sentence) and optional "url" (https source when available). ' +
+        "No other top-level keys. Prefer recent news, product updates, or notable pages for this domain.";
+
+    const { text, raw } = await generateWithGoogleSearch(apiKey, {
+        systemInstruction,
+        userText,
+    });
+
+    let parsed;
+    try {
+        parsed = parseJsonLoose(text);
+    } catch {
+        throw new Error("Could not parse suggestions from the model.");
+    }
+
+    const bullets = Array.isArray(parsed?.bullets) ? parsed.bullets : [];
+    const lines = bullets
+        .slice(0, 8)
+        .map((b) => {
+            const t = typeof b.text === "string" ? b.text.trim() : "";
+            const u = typeof b.url === "string" ? b.url.trim() : "";
+            if (!t) return null;
+            return u ? `• ${t}\n  ${u}` : `• ${t}`;
+        })
+        .filter(Boolean);
+
+    const body = lines.length
+        ? lines.join("\n")
+        : "No structured suggestions returned.";
+    const footer = formatGroundingFooter(raw);
+    return { text: body + footer };
+}

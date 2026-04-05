@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Swift Tabs — content UI dev</title>
+    <link rel="stylesheet" href="dist/content-dev.css" />
+    <style>
+        html,
+        body {
+            margin: 0;
+            min-height: 100%;
+            background: #000;
+        }
+        .swift-tabs-dev-banner {
+            font: 12px/1.4 system-ui, sans-serif;
+            padding: 8px 12px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            border-bottom: 1px solid #333;
+        }
+        .swift-tabs-dev-banner code {
+            font-size: 11px;
+            background: #2a2a40;
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="swift-tabs-dev-banner">
+        Content-script UI preview. Run <code>npm run dev</code>, then reload this tab after edits.
+        No extension reload needed. Open this file as
+        <code>chrome-extension://&lt;extension-id&gt;/content-dev.html</code>
+        (copy the ID from <code>chrome://extensions</code> → Swift Tabs → Details).
+        Note: toggling navigation mode from here still syncs to all tabs with the content script, same as on any page.
+    </div>
+    <script src="dist/content-dev.js"></script>
+</body>
+</html>

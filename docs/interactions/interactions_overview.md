@@ -22,7 +22,8 @@ This document catalogs all user-system interaction flows. Each interaction docum
 | 3 | Tab Menu | Tab Management (Need 3) | Planned | High |
 | 4 | Navigation Mode | Efficient Tab Navigation (Need 1), Window Management (Need 4) | In Progress | High |
 | 5 | Windows Overview | Window and Group Management (Need 4) | Planned | Medium |
-| 6 | Omnibox Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3) | Planned | Medium |
+| 6 | Omnibox Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3) | In Progress | Medium |
+| 6b | Omnibox Apps section | Efficient Tab Navigation (Need 1) | Implemented | Medium |
 | 7 | Find in Page | Find in Page (Need 10) | Planned | Medium |
 | 8 | Container Actions | Window and Group Management (Need 4) | Planned | Medium |
 

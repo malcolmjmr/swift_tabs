@@ -1367,6 +1367,15 @@
 
     function handleWheel(event) {
         if (tabMenuIsOpen || systemMenuIsOpen || settingsPageIsOpen) return;
+
+        const wheelEl =
+            event.target instanceof Element
+                ? event.target
+                : event.target?.parentElement;
+        if (wheelEl?.closest(".omnibox-overlay")) {
+            return;
+        }
+
         if (!isInNavigationMode && !event.metaKey) {
             if (showActiveTabInfo && event.deltaY > 0) {
                 hideActiveTabInfo();

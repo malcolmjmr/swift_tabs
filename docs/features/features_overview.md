@@ -23,6 +23,7 @@ This document catalogs the features that address the user needs. Each feature is
 | 7 | Tab Close with Undo | Quick Recovery (Need 5), Tab Management (Need 3) | Planned | Medium |
 | 8 | Tab Reorder with Scroll | Tab Management (Need 3) | Planned | Medium |
 | 9 | Omnibox with Tab Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3), Suggestions & Assistance (Need 13) | Implemented | High |
+| 9b | Omnibox Apps (home, library, detail) | Efficient Tab Navigation (Need 1), Suggestions & Assistance (Need 13) | Implemented | High |
 | 10 | Find in Page | Find in Page (Need 10) | Planned | Medium |
 | 11 | Container Actions Menu | Window and Group Management (Need 4), Tab Management (Need 3) | Planned | High |
 

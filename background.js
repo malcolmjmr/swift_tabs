@@ -1,3 +1,12 @@
+import {
+    appsAddAppToHomeEnd,
+    appsDeleteApp,
+    appsGetState,
+    appsMergeIntoFolder,
+    appsPutApp,
+    appsPutLayout,
+    appsRemoveFromHome,
+} from "./src/services/apps/appsBackground.js";
 
 chrome.runtime.onInstalled.addListener(onInstalled);
 chrome.runtime.onMessage.addListener(onRuntimeMessage);
@@ -191,9 +200,16 @@ async function getTabsInWindow(windowId) {
 
 const chromeApiHandlers = {
 
-    async GET_CURRENT_TAB(_, { tab }) {
-        console.log("GET_CURRENT_TAB", tab);
-        return tab;
+    async GET_CURRENT_TAB(_, sender) {
+        if (sender.tab) {
+            return sender.tab;
+        }
+        // Extension pages (e.g. content-dev.html) have no sender.tab; use focused tab.
+        const [active] = await chrome.tabs.query({
+            active: true,
+            currentWindow: true,
+        });
+        return active ?? null;
     },
 
 
@@ -567,6 +583,40 @@ const chromeApiHandlers = {
 
         // Sort by date added (most recent first) 
         return allBookmarks.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+    },
+
+    async APPS_GET_STATE() {
+        return appsGetState();
+    },
+
+    async APPS_PUT_LAYOUT({ layout }) {
+        await appsPutLayout(layout);
+        return { ok: true };
+    },
+
+    async APPS_PUT_APP({ app }) {
+        await appsPutApp(app);
+        return { ok: true };
+    },
+
+    async APPS_DELETE_APP({ appId }) {
+        await appsDeleteApp(appId);
+        return { ok: true };
+    },
+
+    async APPS_ADD_TO_HOME({ appId }) {
+        const added = await appsAddAppToHomeEnd(appId);
+        return { added };
+    },
+
+    async APPS_MERGE_INTO_FOLDER({ appIdA, appIdB, title }) {
+        const folder = await appsMergeIntoFolder(appIdA, appIdB, title);
+        return { folder };
+    },
+
+    async APPS_REMOVE_FROM_HOME({ appId }) {
+        await appsRemoveFromHome(appId);
+        return { ok: true };
     },
 };
 
