@@ -25,6 +25,7 @@
  * @property {string} [habitCadence] e.g. daily, weekly
  * @property {number} [habitStreak]
  * @property {number} [habitLastLogged] Unix ms
+ * @property {string} [url] Optional http(s) link when objective represents a saved URL
  */
 
 export const TIMEFRAMES = /** @type {const} */ ([
@@ -90,7 +91,11 @@ export function normalizeObjective(raw) {
             ? raw.status
             : "active";
 
-    return {
+    const urlTrim =
+        typeof raw.url === "string" && raw.url.trim() ? raw.url.trim() : "";
+
+    /** @type {import('./objectiveTypes.js').Objective} */
+    const out = {
         id,
         type,
         title: typeof raw.title === "string" ? raw.title : "",
@@ -132,6 +137,8 @@ export function normalizeObjective(raw) {
                 ? raw.habitLastLogged
                 : undefined,
     };
+    if (urlTrim) out.url = urlTrim;
+    return out;
 }
 
 /**

@@ -55,6 +55,18 @@
         >
             {o.title || "(Untitled)"}
         </span>
+        {#if o.url && /^https?:\/\//i.test(o.url)}
+            <a
+                class="obj-link"
+                href={o.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open link"
+                on:click|stopPropagation
+            >
+                ↗
+            </a>
+        {/if}
     </div>
 </li>
 
@@ -113,5 +125,18 @@
 
     .obj-title-overdue:not(.obj-title-done) {
         color: var(--p-danger-text, #ff7b72);
+    }
+
+    .obj-link {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        color: var(--p-muted, #8b949e);
+        opacity: 0.85;
+    }
+
+    .obj-link:hover {
+        color: var(--p-accent, #58a6ff);
+        opacity: 1;
     }
 </style>

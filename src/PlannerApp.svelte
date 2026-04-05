@@ -6,6 +6,10 @@
         createBlankObjective,
         normalizeObjective,
     } from "./planner/objectiveTypes.js";
+    import {
+        TIMEFRAME_LABEL,
+        TIMEFRAMES_DISPLAY,
+    } from "./planner/plannerUiLabels.js";
     import * as repo from "./planner/objectiveRepository.js";
     import {
         bucketForObjective,
@@ -42,18 +46,6 @@
     let sortScheduledModes = {};
     /** @type {Record<string, 'created'|'title'>} */
     let sortBacklogModes = {};
-
-    const TF_LABEL = {
-        century: "This century",
-        decade: "This decade",
-        year: "This year",
-        month: "This month",
-        week: "This week",
-        today: "Today",
-    };
-
-    /** Today → coarse for UI only (TIMEFRAMES order is semantic coarse→fine). */
-    const TIMEFRAMES_DISPLAY = [...TIMEFRAMES].reverse();
 
     for (const tf of TIMEFRAMES) {
         expanded[tf] = true;
@@ -366,6 +358,8 @@
     function onPlannerMessage(message) {
         if (message?.type === "PLANNER_RECONCILE") {
             void runReconcile();
+        } else if (message?.type === "PLANNER_OBJECTIVES_CHANGED") {
+            void reload();
         }
     }
 
@@ -402,7 +396,7 @@
             {#each TIMEFRAMES_DISPLAY as tf}
                 <TimeframeSection
                     timeframe={tf}
-                    label={TF_LABEL[tf]}
+                    label={TIMEFRAME_LABEL[tf]}
                     backlogItems={backlogForDisplay(tf)}
                     scheduledItems={scheduledForDisplay(tf)}
                     expanded={expanded[tf]}

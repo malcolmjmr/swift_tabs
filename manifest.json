@@ -32,7 +32,8 @@
         }
     ],
     "host_permissions": [
-        "<all_urls>"
+        "<all_urls>",
+        "https://generativelanguage.googleapis.com/*"
     ],
     "options_page": "options.html"
 }

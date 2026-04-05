@@ -7,6 +7,11 @@ import {
     appsPutLayout,
     appsRemoveFromHome,
 } from "./src/services/apps/appsBackground.js";
+import {
+    createBlankObjective,
+    isTimeframe,
+} from "./src/planner/objectiveTypes.js";
+import { saveObjective } from "./src/planner/objectiveRepository.js";
 
 chrome.runtime.onInstalled.addListener(onInstalled);
 chrome.runtime.onMessage.addListener(onRuntimeMessage);
@@ -19,9 +24,12 @@ chrome.tabs.onActivated.addListener(onTabActivated);
 
 const PLANNER_RECONCILE_ALARM = "plannerReconcile";
 
+const LINK_QUEUE_SESSION_KEY = "swiftTabsLinkQueueByTab";
+
 chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name !== PLANNER_RECONCILE_ALARM) return;
-    chrome.runtime.sendMessage({ type: "PLANNER_RECONCILE" }).catch(() => {});
+    if (alarm.name === PLANNER_RECONCILE_ALARM) {
+        chrome.runtime.sendMessage({ type: "PLANNER_RECONCILE" }).catch(() => {});
+    }
 });
 
 chrome.alarms.get(PLANNER_RECONCILE_ALARM, (existing) => {
@@ -617,6 +625,87 @@ const chromeApiHandlers = {
     async APPS_REMOVE_FROM_HOME({ appId }) {
         await appsRemoveFromHome(appId);
         return { ok: true };
+    },
+
+    async LINK_QUEUE_PUSH({ url, title }, sender) {
+        const tabId = sender.tab?.id;
+        if (tabId == null) throw new Error("LINK_QUEUE_PUSH requires sender tab");
+        const sess = await chrome.storage.session.get(LINK_QUEUE_SESSION_KEY);
+        const map = sess[LINK_QUEUE_SESSION_KEY] || {};
+        const key = String(tabId);
+        const q = map[key] || { urls: [] };
+        q.urls.push({
+            id: `lnk_${Date.now().toString(36)}`,
+            url,
+            title: title || "",
+            savedAt: Date.now(),
+        });
+        map[key] = q;
+        await chrome.storage.session.set({ [LINK_QUEUE_SESSION_KEY]: map });
+        return { ok: true, size: q.urls.length };
+    },
+
+    async LINK_QUEUE_GET(_, sender) {
+        const tabId = sender.tab?.id;
+        if (tabId == null) return { urls: [] };
+        const sess = await chrome.storage.session.get(LINK_QUEUE_SESSION_KEY);
+        const map = sess[LINK_QUEUE_SESSION_KEY] || {};
+        return { urls: map[String(tabId)]?.urls ?? [] };
+    },
+
+    async LINK_QUEUE_SHIFT_AND_NAVIGATE(_, sender) {
+        const tabId = sender.tab?.id;
+        if (tabId == null) throw new Error("LINK_QUEUE_SHIFT_AND_NAVIGATE requires sender tab");
+        const sess = await chrome.storage.session.get(LINK_QUEUE_SESSION_KEY);
+        const map = sess[LINK_QUEUE_SESSION_KEY] || {};
+        const key = String(tabId);
+        const q = map[key];
+        if (!q?.urls?.length) return { opened: false };
+        const [first, ...rest] = q.urls;
+        q.urls = rest;
+        map[key] = q;
+        await chrome.storage.session.set({ [LINK_QUEUE_SESSION_KEY]: map });
+        await chrome.tabs.update(tabId, { url: first.url });
+        return { opened: true, url: first.url };
+    },
+
+    async PLANNER_BACKLOG_ADD_LINK({ url, title, timeframe }) {
+        if (!url || !/^https?:\/\//i.test(url)) {
+            throw new Error("Invalid URL");
+        }
+        if (!isTimeframe(timeframe)) {
+            throw new Error("Invalid timeframe");
+        }
+        let t = typeof title === "string" ? title.trim() : "";
+        if (!t) {
+            try {
+                t = new URL(url).hostname;
+            } catch {
+                t = "Link";
+            }
+        }
+        const objective = createBlankObjective({
+            timeframe,
+            title: t,
+            description: "",
+            url,
+        });
+        await saveObjective(objective);
+        chrome.runtime
+            .sendMessage({ type: "PLANNER_OBJECTIVES_CHANGED" })
+            .catch(() => {});
+        return { ok: true, id: objective.id };
+    },
+
+    async CREATE_WINDOW_WITH_URL({ url, focused = true }) {
+        if (!url || !/^https?:\/\//i.test(url)) {
+            throw new Error("CREATE_WINDOW_WITH_URL requires http(s) URL");
+        }
+        const win = await chrome.windows.create({
+            url,
+            focused: focused !== false,
+        });
+        return win;
     },
 };
 

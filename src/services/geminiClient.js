@@ -183,6 +183,36 @@ export async function generateContentPlain(apiKey, opts) {
 }
 
 /**
+ * Short neutral summary for a hyperlink (URL + optional anchor text).
+ * Uses Google Search grounding when helpful.
+ *
+ * @param {{ url: string, linkText?: string }} opts
+ * @returns {Promise<string>}
+ */
+export async function summarizeLink(opts) {
+    const apiKey = await getGeminiApiKey();
+    const url = (opts.url || "").trim();
+    const linkText = (opts.linkText || "").trim();
+
+    const systemInstruction =
+        "You describe what a webpage is about for someone who has not opened it yet. " +
+        "Use Google Search when the URL alone is insufficient. Be concise and neutral. Plain text only.";
+
+    const userText =
+        `Summarize this link in 2–4 short sentences.\n\nURL: ${url}\n` +
+        (linkText ? `Link text on the page: ${linkText}\n` : "") +
+        "\nCover: what site/page this likely is, the main topic, and who it is for if clear.";
+
+    const { text, raw } = await generateWithGoogleSearch(apiKey, {
+        systemInstruction,
+        userText,
+    });
+
+    const footer = formatGroundingFooter(raw);
+    return (text || "No summary returned.") + footer;
+}
+
+/**
  * @param {object} raw
  * @returns {string}
  */

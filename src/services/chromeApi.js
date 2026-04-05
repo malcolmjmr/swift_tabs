@@ -195,4 +195,31 @@ export const chromeService = {
     async appsRemoveFromHome(appId) {
         return this.sendMessage("APPS_REMOVE_FROM_HOME", { appId });
     },
+
+    async linkQueuePush(url, title = "") {
+        return this.sendMessage("LINK_QUEUE_PUSH", { url, title });
+    },
+
+    async linkQueueGet() {
+        return this.sendMessage("LINK_QUEUE_GET", {});
+    },
+
+    async linkQueueNavigateNext() {
+        return this.sendMessage("LINK_QUEUE_SHIFT_AND_NAVIGATE", {});
+    },
+
+    async plannerBacklogAddLink(url, title, timeframe) {
+        return this.sendMessage("PLANNER_BACKLOG_ADD_LINK", {
+            url,
+            title,
+            timeframe,
+        });
+    },
+
+    async createWindowWithUrl(url, options = {}) {
+        return this.sendMessage("CREATE_WINDOW_WITH_URL", {
+            url,
+            focused: options.focused !== false,
+        });
+    },
 };

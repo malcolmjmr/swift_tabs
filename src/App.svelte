@@ -20,6 +20,10 @@
     import ActiveTabInfo from "./components/tab/ActiveTabInfo.svelte";
     import HelpMenu from "./components/HelpMenu.svelte";
     import SettingsPage from "./components/SettingsPage.svelte";
+    import LinkContextMenu from "./components/link/LinkContextMenu.svelte";
+    import LinkPreviewOverlay from "./components/link/LinkPreviewOverlay.svelte";
+    import LinkDescriptionModal from "./components/link/LinkDescriptionModal.svelte";
+    import { summarizeLink } from "./services/geminiClient.js";
 
     let isInNavigationMode = false;
     let omniboxIsOpen = false;
@@ -29,6 +33,25 @@
     let systemMenuIsOpen = false;
     let settingsPageIsOpen = false;
     let helpMenuIsOpen = false;
+
+    let linkMenuOpen = false;
+    let linkMenuX = 0;
+    let linkMenuY = 0;
+    let linkMenuUrl = "";
+    let linkMenuText = "";
+    /** @type {string | null} */
+    let linkPreviewUrl = null;
+    let linkDescriptionOpen = false;
+    let linkDescriptionBody = "";
+    let linkDescriptionLoading = false;
+    let linkDescriptionError = "";
+    let linkSuppressNextLinkContext = false;
+    /** @type {{ url: string, linkText: string, startX: number, startY: number } | null} */
+    let linkRightPressPending = null;
+
+    const LINK_RIGHT_MOVE_CANCEL_PX = 14;
+    /** Same-tick as contextmenu, long-press timer may open the menu after this handler; defer tab open. */
+    const LINK_CONTEXT_TAB_DEFER_MS = 24;
 
     const TAB_SWITCHING_DISMISS_MS = 1500;
     let isInTabSwitchingMode = false;
@@ -343,7 +366,26 @@
         }
     }
 
+    function isHttpLinkFromEventTarget(target) {
+        if (!target || typeof target.closest !== "function") return null;
+        const link = target.closest("a");
+        if (!link?.href) return null;
+        const href = link.href;
+        if (!href.startsWith("http://") && !href.startsWith("https://"))
+            return null;
+        return link;
+    }
+
     function handleContextMenuCapture(event) {
+        if (
+            linkMenuOpen ||
+            linkPreviewUrl ||
+            linkDescriptionOpen
+        ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
         if (!isInNavigationMode) return;
         if (
             tabMenuIsOpen ||
@@ -353,6 +395,7 @@
         ) {
             return;
         }
+        if (isHttpLinkFromEventTarget(event.target)) return;
         event.preventDefault();
         event.stopImmediatePropagation();
     }
@@ -452,9 +495,21 @@
         if (link?.href) {
             const url = link.href;
             if (url.startsWith("http://") || url.startsWith("https://")) {
+                if (linkMenuOpen || linkSuppressNextLinkContext) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (linkSuppressNextLinkContext) {
+                        linkSuppressNextLinkContext = false;
+                    }
+                    return;
+                }
                 event.preventDefault();
                 event.stopPropagation();
-                chromeService.createTab({ url, active: false });
+                const tabUrl = url;
+                setTimeout(() => {
+                    if (linkMenuOpen || linkSuppressNextLinkContext) return;
+                    void chromeService.createTab({ url: tabUrl, active: false });
+                }, LINK_CONTEXT_TAB_DEFER_MS);
             }
             return;
         }
@@ -470,6 +525,42 @@
     }
 
     function handleMouseDown(event) {
+        if (event.button === 2) {
+            const a = isHttpLinkFromEventTarget(event.target);
+            if (
+                a &&
+                !tabMenuIsOpen &&
+                !helpMenuIsOpen &&
+                !linkMenuOpen &&
+                !linkPreviewUrl &&
+                !linkDescriptionOpen &&
+                !systemMenuIsOpen &&
+                !settingsPageIsOpen
+            ) {
+                clearTimeout(rightClickTimer);
+                rightClickTimer = null;
+                linkRightPressPending = {
+                    url: a.href,
+                    linkText: (a.textContent || "").trim().slice(0, 500),
+                    startX: event.clientX,
+                    startY: event.clientY,
+                };
+                rightClickTimer = setTimeout(() => {
+                    rightClickTimer = null;
+                    if (!linkRightPressPending) return;
+                    linkSuppressNextLinkContext = true;
+                    linkMenuX = linkRightPressPending.startX;
+                    linkMenuY = linkRightPressPending.startY;
+                    linkMenuUrl = linkRightPressPending.url;
+                    linkMenuText = linkRightPressPending.linkText;
+                    linkRightPressPending = null;
+                    linkMenuOpen = true;
+                }, longPressThreshold);
+                if (!isInNavigationMode) return;
+                return;
+            }
+        }
+
         if (!isInNavigationMode) return;
         if (event.button === 2) {
             // TODO: long-press secondary button → LLM related-tab selection (future).
@@ -514,6 +605,18 @@
     }
 
     function handleMouseMove(event) {
+        if (linkRightPressPending && (event.buttons & 2)) {
+            const dx = event.clientX - linkRightPressPending.startX;
+            const dy = event.clientY - linkRightPressPending.startY;
+            if (
+                dx * dx + dy * dy >
+                LINK_RIGHT_MOVE_CANCEL_PX * LINK_RIGHT_MOVE_CANCEL_PX
+            ) {
+                clearTimeout(rightClickTimer);
+                rightClickTimer = null;
+                linkRightPressPending = null;
+            }
+        }
         if (tabMenuIsOpen || systemMenuIsOpen || settingsPageIsOpen) return;
         if (
             !isInNavigationMode ||
@@ -546,6 +649,8 @@
     async function handleMouseUp(event) {
         if (event.button === 2) {
             clearTimeout(rightClickTimer);
+            rightClickTimer = null;
+            if (!linkMenuOpen) linkRightPressPending = null;
             if (
                 isInNavigationMode &&
                 secondaryButtonDown &&
@@ -617,6 +722,9 @@
             systemMenuIsOpen = false;
             settingsPageIsOpen = false;
             helpMenuIsOpen = false;
+            linkMenuOpen = false;
+            linkPreviewUrl = null;
+            linkDescriptionOpen = false;
         }
     }
 
@@ -645,8 +753,101 @@
             !isInTabSwitchingMode &&
             !systemMenuIsOpen &&
             !settingsPageIsOpen &&
-            !helpMenuIsOpen
+            !helpMenuIsOpen &&
+            !linkMenuOpen &&
+            !linkPreviewUrl &&
+            !linkDescriptionOpen
         );
+    }
+
+    async function onLinkMenuDescription() {
+        linkMenuOpen = false;
+        linkDescriptionOpen = true;
+        linkDescriptionLoading = true;
+        linkDescriptionError = "";
+        linkDescriptionBody = "";
+        try {
+            linkDescriptionBody = await summarizeLink({
+                url: linkMenuUrl,
+                linkText: linkMenuText,
+            });
+        } catch (e) {
+            linkDescriptionError =
+                e?.message || String(e);
+        } finally {
+            linkDescriptionLoading = false;
+        }
+    }
+
+    function onLinkMenuPreview() {
+        linkPreviewUrl = linkMenuUrl;
+        linkMenuOpen = false;
+    }
+
+    async function onLinkMenuOpenTab() {
+        await chromeService.createTab({ url: linkMenuUrl, active: true });
+        linkMenuOpen = false;
+    }
+
+    async function onLinkMenuOpenWindow() {
+        await chromeService.createWindowWithUrl(linkMenuUrl, {
+            focused: true,
+        });
+        linkMenuOpen = false;
+    }
+
+    async function onLinkMenuSaveQueue() {
+        try {
+            await chromeService.linkQueuePush(linkMenuUrl, linkMenuText);
+        } catch (e) {
+            console.error("linkQueuePush", e);
+        }
+        linkMenuOpen = false;
+    }
+
+    async function onLinkMenuSaveApp(/** @type {CustomEvent} */ e) {
+        const { appId, url, linkText } = e.detail || {};
+        if (!appId || !url) {
+            linkMenuOpen = false;
+            return;
+        }
+        try {
+            const state = await chromeService.appsGetState();
+            const app = (state.apps || []).find((a) => a.id === appId);
+            if (!app) {
+                linkMenuOpen = false;
+                return;
+            }
+            const links = [...(app.savedLinks || [])];
+            links.push({
+                id: `lnk_${Date.now().toString(36)}`,
+                url,
+                title: linkText || "",
+                savedAt: Date.now(),
+            });
+            await chromeService.appsPutApp({ id: appId, savedLinks: links });
+        } catch (err) {
+            console.error("onLinkMenuSaveApp", err);
+        }
+        linkMenuOpen = false;
+    }
+
+    async function onLinkMenuPlannerTime(/** @type {CustomEvent} */ e) {
+        const { url, linkText, timeframe } = e.detail || {};
+        if (!url || !timeframe) {
+            linkMenuOpen = false;
+            return;
+        }
+        try {
+            await chromeService.plannerBacklogAddLink(
+                url,
+                linkText || "",
+                timeframe,
+            );
+        } catch (err) {
+            console.error("onLinkMenuPlannerTime", err);
+        }
+        linkMenuOpen = false;
     }
 
     async function handleKeydown(event) {
@@ -860,7 +1061,18 @@
                 openOmniboxFromShortcut();
             }, longPressThreshold);
         } else if (event.key === "Escape") {
-            if (settingsPageIsOpen) {
+            if (linkDescriptionOpen) {
+                event.preventDefault();
+                linkDescriptionOpen = false;
+                linkDescriptionError = "";
+                linkDescriptionBody = "";
+            } else if (linkPreviewUrl) {
+                event.preventDefault();
+                linkPreviewUrl = null;
+            } else if (linkMenuOpen) {
+                event.preventDefault();
+                linkMenuOpen = false;
+            } else if (settingsPageIsOpen) {
                 event.preventDefault();
                 settingsPageIsOpen = false;
             } else if (systemMenuIsOpen) {
@@ -1168,10 +1380,14 @@
             event.stopPropagation();
             history.back();
         } else if (event.key === ".") {
-            // (>) used to navigate to next history item
             event.preventDefault();
             event.stopPropagation();
-            history.forward();
+            try {
+                const res = await chromeService.linkQueueNavigateNext();
+                if (!res?.opened) history.forward();
+            } catch {
+                history.forward();
+            }
         } else {
             let textSelection = window.getSelection().toString();
             if (textSelection.length > 0) {
@@ -1535,6 +1751,46 @@
     on:contextmenu={handleRightClick}
     on:click={handleClick}
 />
+
+{#if linkMenuOpen}
+    <LinkContextMenu
+        x={linkMenuX}
+        y={linkMenuY}
+        url={linkMenuUrl}
+        linkText={linkMenuText}
+        pageHostname={typeof location !== "undefined" ? location.hostname : ""}
+        onClose={() => {
+            linkMenuOpen = false;
+        }}
+        on:description={onLinkMenuDescription}
+        on:preview={onLinkMenuPreview}
+        on:tab={onLinkMenuOpenTab}
+        on:window={onLinkMenuOpenWindow}
+        on:queue={onLinkMenuSaveQueue}
+        on:saveApp={onLinkMenuSaveApp}
+        on:plannerTime={onLinkMenuPlannerTime}
+    />
+{/if}
+{#if linkPreviewUrl}
+    <LinkPreviewOverlay
+        url={linkPreviewUrl}
+        onClose={() => {
+            linkPreviewUrl = null;
+        }}
+    />
+{/if}
+{#if linkDescriptionOpen}
+    <LinkDescriptionModal
+        text={linkDescriptionBody}
+        loading={linkDescriptionLoading}
+        errorMessage={linkDescriptionError}
+        onClose={() => {
+            linkDescriptionOpen = false;
+            linkDescriptionError = "";
+            linkDescriptionBody = "";
+        }}
+    />
+{/if}
 
 {#if tabMenuIsOpen}
     <TabMenu
