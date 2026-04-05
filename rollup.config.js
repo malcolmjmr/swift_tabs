@@ -41,5 +41,37 @@ export default [
             clearScreen: false
 
         }
+    },
+    {
+        input: 'src/planner.js',
+        output: {
+            sourcemap: !production,
+            format: 'iife',
+            name: 'planner',
+            file: 'dist/planner.js'
+        },
+        plugins: [
+            svelte({
+                compilerOptions: {
+                    dev: !production
+                }
+            }),
+
+            css({ output: 'planner.css' }),
+
+            resolve({
+                browser: true,
+                dedupe: ['svelte']
+            }),
+
+            commonjs(),
+
+            image(),
+
+            production && terser()
+        ],
+        watch: {
+            clearScreen: false
+        }
     }
 ];

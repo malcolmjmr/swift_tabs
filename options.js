@@ -40,11 +40,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 select.value = value;
             }
         });
-        Object.entries(settings.apiKeys).forEach(([key, value]) => {
-            const select = document.getElementById(key);
-            if (select) {
-                select.value = value;
+        Object.entries(settings.apiKeys || {}).forEach(([key, value]) => {
+            const el = document.getElementById(key);
+            if (!el) return;
+            if (el.tagName === "SELECT" || el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
+                el.value = value ?? "";
             }
         });
+
+        const openPlanner = document.getElementById('openPlanner');
+        if (openPlanner) {
+            openPlanner.addEventListener('click', () => {
+                chrome.tabs.create({ url: chrome.runtime.getURL('planner.html') });
+            });
+        }
     });
 });

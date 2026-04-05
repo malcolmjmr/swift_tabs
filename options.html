@@ -65,9 +65,73 @@
             border-radius: 5px;
             margin-bottom: 20px;
         }
+        .api-section {
+            margin: 28px 0;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        .api-section h3 {
+            margin-top: 0;
+            color: #2b6cb0;
+        }
+        .api-key-row {
+            margin-bottom: 18px;
+        }
+        .api-key-row label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .api-key-row input[type="password"],
+        .api-key-row input[type="text"] {
+            width: 100%;
+            max-width: 520px;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e0;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        .api-key-row .api-docs {
+            display: inline-block;
+            margin-top: 6px;
+            font-size: 13px;
+        }
+        .planner-open-row {
+            margin-bottom: 24px;
+            padding: 16px 20px;
+            background: #ebf8ff;
+            border: 1px solid #bee3f8;
+            border-radius: 8px;
+        }
+        .planner-open-row p {
+            margin: 0 0 10px;
+            font-size: 14px;
+            color: #2c5282;
+        }
+        .open-planner-btn {
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            background: #2b6cb0;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .open-planner-btn:hover {
+            background: #2c5282;
+        }
     </style>
 </head>
 <body>
+    <div class="planner-open-row">
+        <p>Open the standalone planner in a new tab (goals and schedules).</p>
+        <button type="button" class="open-planner-btn" id="openPlanner">Open Planner</button>
+    </div>
+
     <h2>How Swift Tabs Works</h2>
         
     <div class="key-combo">
@@ -152,11 +216,69 @@
             </select>
         </div>
 
-        <h3>Gemin API Key</h3>
-        <input type="password" class="apiKey" name="geminiApiKey" id="geminiApiKey" placeholder="Enter your Gemin API key">
+        <div class="api-section">
+            <h3>LLM APIs</h3>
+            <p class="api-docs">Keys are stored locally in this browser. They are not sent anywhere until you use a feature that calls the provider.</p>
+
+            <div class="api-key-row">
+                <label for="geminiApiKey">Google Gemini</label>
+                <input type="password" class="apiKey" name="geminiApiKey" id="geminiApiKey" placeholder="Gemini API key" autocomplete="off">
+                <a class="api-docs" href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noopener">Get a key (Google AI Studio)</a>
+            </div>
+
+            <div class="api-key-row">
+                <label for="kimiApiKey">Kimi (Moonshot AI)</label>
+                <input type="password" class="apiKey" name="kimiApiKey" id="kimiApiKey" placeholder="Moonshot / Kimi API key" autocomplete="off">
+                <a class="api-docs" href="https://platform.moonshot.cn/docs/api/chat" target="_blank" rel="noopener">Moonshot API docs</a>
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Annotations</h3>
+
+            <div class="api-key-row">
+                <label for="hypothesisApiKey">Hypothes.is</label>
+                <input type="password" class="apiKey" name="hypothesisApiKey" id="hypothesisApiKey" placeholder="Personal API token" autocomplete="off">
+                <a class="api-docs" href="https://hypothes.is/account/developer" target="_blank" rel="noopener">Developer token</a>
+                ·
+                <a class="api-docs" href="https://h.readthedocs.io/en/latest/api/" target="_blank" rel="noopener">API reference</a>
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Search &amp; discovery</h3>
+
+            <div class="api-key-row">
+                <label for="braveSearchApiKey">Brave Search</label>
+                <input type="password" class="apiKey" name="braveSearchApiKey" id="braveSearchApiKey" placeholder="Brave Search API key" autocomplete="off">
+                <a class="api-docs" href="https://api.search.brave.com/app/documentation" target="_blank" rel="noopener">Brave Search API</a>
+            </div>
+
+            <div class="api-key-row">
+                <label for="exaApiKey">Exa</label>
+                <input type="password" class="apiKey" name="exaApiKey" id="exaApiKey" placeholder="Exa API key" autocomplete="off">
+                <a class="api-docs" href="https://docs.exa.ai/reference/getting-started" target="_blank" rel="noopener">Exa docs</a>
+            </div>
+
+            <div class="api-key-row">
+                <label for="tavilyApiKey">Tavily</label>
+                <input type="password" class="apiKey" name="tavilyApiKey" id="tavilyApiKey" placeholder="Tavily API key" autocomplete="off">
+                <a class="api-docs" href="https://docs.tavily.com/documentation/api-reference/introduction" target="_blank" rel="noopener">Tavily docs</a>
+            </div>
+        </div>
+
+        <div class="api-section">
+            <h3>Commerce</h3>
+
+            <div class="api-key-row">
+                <label for="channel3ApiKey">Channel3</label>
+                <input type="password" class="apiKey" name="channel3ApiKey" id="channel3ApiKey" placeholder="Channel3 API key" autocomplete="off">
+                <a class="api-docs" href="https://docs.trychannel3.com/" target="_blank" rel="noopener">Channel3 docs</a>
+            </div>
+        </div>
 
     </form>
 
     <script src="options.js"></script>
 </body>
-</html></div>
+</html>

@@ -8,12 +8,26 @@ chrome.tabs.onActivated.addListener(onTabActivated);
 
 
 
+const PLANNER_RECONCILE_ALARM = "plannerReconcile";
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== PLANNER_RECONCILE_ALARM) return;
+    chrome.runtime.sendMessage({ type: "PLANNER_RECONCILE" }).catch(() => {});
+});
+
+chrome.alarms.get(PLANNER_RECONCILE_ALARM, (existing) => {
+    if (!existing) {
+        chrome.alarms.create(PLANNER_RECONCILE_ALARM, {
+            periodInMinutes: 24 * 60,
+        });
+    }
+});
+
 async function onInstalled() {
     console.log('Swift Tabs installed');
-    // const tabs = (await chrome.tabs.query({ currentWindow: true }));
-    // const activeTabIndex = tabs.findIndex(tab => tab.active);
-    // const tab = tabs[activeTabIndex - 1];
-    // chrome.tabs.reload(tab.id);
+    chrome.alarms.create(PLANNER_RECONCILE_ALARM, {
+        periodInMinutes: 24 * 60,
+    });
 
     chrome.tabs.query({}).then(tabs => {
         for (const tab of tabs) {
@@ -76,6 +90,17 @@ function onRuntimeMessage(message, sender, sendResponse) {
         notifyActiveTabOfTabSwitchingMode();
     } else if (message.type === 'NAVIGATION_MODE') {
         onNavigationModeMessage(message);
+    } else if (message.type === 'OPEN_OPTIONS_PAGE') {
+        chrome.runtime.openOptionsPage(() => {
+            const err = chrome.runtime.lastError;
+            sendResponse(err ? { error: err.message } : { ok: true });
+        });
+    } else if (message.type === 'OPEN_PLANNER_PAGE') {
+        const url = chrome.runtime.getURL('planner.html');
+        chrome.tabs.create({ url }, () => {
+            const err = chrome.runtime.lastError;
+            sendResponse(err ? { error: err.message } : { ok: true });
+        });
     }
     return true; // Indicates that sendResponse will be called asynchronously
 }

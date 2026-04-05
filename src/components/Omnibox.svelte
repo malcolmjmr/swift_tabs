@@ -1,6 +1,13 @@
 <script>
     import { createEventDispatcher, onMount } from "svelte";
     import { chromeService } from "../services/chromeApi";
+    import {
+        fetchNewsEventDetail,
+        fetchTopNewsEvents,
+        fetchTopTrendingTopics,
+        fetchTrendingTopicDetail,
+    } from "../services/geminiClient";
+    import { fetchHypothesisHighlightPages } from "../services/hypothesisClient";
 
     export let query = "";
     export let activeTabId = null;
@@ -16,6 +23,7 @@
         { id: "news", label: "News", icon: "newspaper" },
         { id: "trending", label: "Trending", icon: "trending_up" },
         { id: "reading", label: "Reading", icon: "menu_book" },
+        { id: "highlights", label: "Highlights", icon: "highlight" },
         { id: "shopping", label: "Shopping", icon: "shopping_bag" },
         { id: "learning", label: "Learning", icon: "school" },
         { id: "data", label: "Data", icon: "database" },
@@ -25,8 +33,6 @@
 
     const PLACEHOLDER_SECTION_IDS = new Set([
         "tasks",
-        "news",
-        "trending",
         "reading",
         "shopping",
         "learning",
@@ -51,6 +57,26 @@
     let searchTimeout = null;
     let sectionScrollDelta = 0;
     let resultScrollDelta = 0;
+
+    let newsView = "list";
+    let newsItems = [];
+    let newsListError = "";
+    let newsListLoading = false;
+    let newsDetailText = "";
+    let newsDetailError = "";
+    let newsDetailLoading = false;
+
+    let trendingView = "list";
+    let trendingItems = [];
+    let trendingListError = "";
+    let trendingListLoading = false;
+    let trendingDetailText = "";
+    let trendingDetailError = "";
+    let trendingDetailLoading = false;
+
+    let highlightsPages = [];
+    let highlightsListError = "";
+    let highlightsListLoading = false;
 
     const SECTION_SCROLL_THRESHOLD = 50;
     const RESULT_SCROLL_THRESHOLD = 40;
@@ -118,12 +144,278 @@
     }
 
     function expandIntoSection(sectionId) {
+        if (sectionId !== "news") {
+            newsView = "list";
+            newsDetailText = "";
+            newsDetailError = "";
+        }
+        if (sectionId !== "trending") {
+            trendingView = "list";
+            trendingDetailText = "";
+            trendingDetailError = "";
+        }
         const idx = SECTIONS.findIndex((s) => s.id === sectionId);
         if (idx >= 0) selectedSectionIndex = idx;
         activeSections = [sectionId];
         sectionResultsOpen = true;
         selectedResultIndex = 0;
+        if (sectionId === "news") {
+            newsView = "list";
+            newsDetailText = "";
+            newsDetailError = "";
+            void loadNewsIfNeeded();
+        }
+        if (sectionId === "trending") {
+            trendingView = "list";
+            trendingDetailText = "";
+            trendingDetailError = "";
+            void loadTrendingIfNeeded();
+        }
+        if (sectionId === "highlights") {
+            void loadHighlightsIfNeeded();
+        }
         updateSearchResults(activeSections, query);
+    }
+
+    function applyNewsVisibleResults() {
+        const q = query.trim().toLowerCase();
+        const filtered = !q
+            ? newsItems
+            : newsItems.filter((row) =>
+                  row.headline.toLowerCase().includes(q),
+              );
+        visibleResults = filtered.map((row) => ({
+            type: "news",
+            title: row.headline,
+            headline: row.headline,
+            searchQuery: row.searchQuery,
+            subtitle: "Enter — details · Space — Google",
+        }));
+    }
+
+    async function loadNewsIfNeeded() {
+        if (activeSections[0] !== "news") return;
+        newsListError = "";
+        newsListLoading = true;
+        try {
+            newsItems = await fetchTopNewsEvents();
+            if (newsView === "list") {
+                applyNewsVisibleResults();
+                const maxIdx = Math.max(0, visibleResults.length - 1);
+                selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+            }
+        } catch (e) {
+            const msg =
+                e.message === "missing_api_key"
+                    ? "Add a Google Gemini API key in Swift Tabs extension options."
+                    : e.message || "Failed to load news.";
+            newsListError = msg;
+            newsItems = [];
+            if (newsView === "list") applyNewsVisibleResults();
+        } finally {
+            newsListLoading = false;
+        }
+    }
+
+    function isNewsListWithSelection() {
+        return (
+            activeSections[0] === "news" &&
+            newsView === "list" &&
+            visibleResults[selectedResultIndex]?.type === "news"
+        );
+    }
+
+    async function openNewsGoogleSearch() {
+        const item = visibleResults[selectedResultIndex];
+        if (!item || item.type !== "news") return;
+        const q = item.searchQuery || item.title || item.headline;
+        const url = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+        await chromeService.createTab({ url, active: true });
+    }
+
+    async function openNewsDetail() {
+        const item = visibleResults[selectedResultIndex];
+        if (!item || item.type !== "news") return;
+        newsDetailError = "";
+        newsDetailLoading = true;
+        newsView = "detail";
+        newsDetailText = "";
+        try {
+            newsDetailText = await fetchNewsEventDetail({
+                headline: item.headline || item.title,
+                searchQuery: item.searchQuery,
+            });
+        } catch (e) {
+            newsDetailError =
+                e.message === "missing_api_key"
+                    ? "Add a Google Gemini API key in Swift Tabs extension options."
+                    : e.message || "Failed to load details.";
+        } finally {
+            newsDetailLoading = false;
+        }
+    }
+
+    function newsDetailBackToList() {
+        newsView = "list";
+        newsDetailText = "";
+        newsDetailError = "";
+        applyNewsVisibleResults();
+        const maxIdx = Math.max(0, visibleResults.length - 1);
+        selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+    }
+
+    function applyTrendingVisibleResults() {
+        const q = query.trim().toLowerCase();
+        const filtered = !q
+            ? trendingItems
+            : trendingItems.filter((row) =>
+                  row.headline.toLowerCase().includes(q),
+              );
+        visibleResults = filtered.map((row) => ({
+            type: "trending",
+            title: row.headline,
+            headline: row.headline,
+            searchQuery: row.searchQuery,
+            subtitle: "Enter — details · Space — Google",
+        }));
+    }
+
+    async function loadTrendingIfNeeded() {
+        if (activeSections[0] !== "trending") return;
+        trendingListError = "";
+        trendingListLoading = true;
+        try {
+            trendingItems = await fetchTopTrendingTopics();
+            if (trendingView === "list") {
+                applyTrendingVisibleResults();
+                const maxIdx = Math.max(0, visibleResults.length - 1);
+                selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+            }
+        } catch (e) {
+            const msg =
+                e.message === "missing_api_key"
+                    ? "Add a Google Gemini API key in Swift Tabs extension options."
+                    : e.message || "Failed to load trending topics.";
+            trendingListError = msg;
+            trendingItems = [];
+            if (trendingView === "list") applyTrendingVisibleResults();
+        } finally {
+            trendingListLoading = false;
+        }
+    }
+
+    function isTrendingListWithSelection() {
+        return (
+            activeSections[0] === "trending" &&
+            trendingView === "list" &&
+            visibleResults[selectedResultIndex]?.type === "trending"
+        );
+    }
+
+    async function openTrendingGoogleSearch() {
+        const item = visibleResults[selectedResultIndex];
+        if (!item || item.type !== "trending") return;
+        const q = item.searchQuery || item.title || item.headline;
+        const url = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+        await chromeService.createTab({ url, active: true });
+    }
+
+    async function openTrendingDetail() {
+        const item = visibleResults[selectedResultIndex];
+        if (!item || item.type !== "trending") return;
+        trendingDetailError = "";
+        trendingDetailLoading = true;
+        trendingView = "detail";
+        trendingDetailText = "";
+        try {
+            trendingDetailText = await fetchTrendingTopicDetail({
+                headline: item.headline || item.title,
+                searchQuery: item.searchQuery,
+            });
+        } catch (e) {
+            trendingDetailError =
+                e.message === "missing_api_key"
+                    ? "Add a Google Gemini API key in Swift Tabs extension options."
+                    : e.message || "Failed to load details.";
+        } finally {
+            trendingDetailLoading = false;
+        }
+    }
+
+    function trendingDetailBackToList() {
+        trendingView = "list";
+        trendingDetailText = "";
+        trendingDetailError = "";
+        applyTrendingVisibleResults();
+        const maxIdx = Math.max(0, visibleResults.length - 1);
+        selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+    }
+
+    function applyHighlightsVisibleResults() {
+        const q = query.trim().toLowerCase();
+        const filtered = !q
+            ? highlightsPages
+            : highlightsPages.filter((row) => {
+                  const title = (row.title || "").toLowerCase();
+                  const uri = (row.uri || "").toLowerCase();
+                  const prev = (row.previewSnippet || "").toLowerCase();
+                  let host = "";
+                  try {
+                      host = new URL(row.uri).hostname.toLowerCase();
+                  } catch {
+                      /* ignore */
+                  }
+                  return (
+                      title.includes(q) ||
+                      uri.includes(q) ||
+                      prev.includes(q) ||
+                      host.includes(q)
+                  );
+              });
+        visibleResults = filtered.map((row) => ({
+            type: "hypothesisPage",
+            title: row.title,
+            url: row.uri,
+            subtitle: `${row.count} highlight${row.count === 1 ? "" : "s"} · Space — open page`,
+        }));
+    }
+
+    async function loadHighlightsIfNeeded() {
+        if (activeSections[0] !== "highlights") return;
+        highlightsListError = "";
+        highlightsListLoading = true;
+        try {
+            const pages = await fetchHypothesisHighlightPages();
+            if (activeSections[0] !== "highlights") return;
+            highlightsPages = pages;
+            applyHighlightsVisibleResults();
+            const maxIdx = Math.max(0, visibleResults.length - 1);
+            selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+        } catch (e) {
+            if (activeSections[0] !== "highlights") return;
+            const msg =
+                e.message === "missing_api_key"
+                    ? "Add a Hypothes.is personal API token in Swift Tabs extension options."
+                    : e.message || "Failed to load Hypothesis highlights.";
+            highlightsListError = msg;
+            highlightsPages = [];
+            applyHighlightsVisibleResults();
+        } finally {
+            highlightsListLoading = false;
+        }
+    }
+
+    function isHighlightsListWithSelection() {
+        return (
+            activeSections[0] === "highlights" &&
+            visibleResults[selectedResultIndex]?.type === "hypothesisPage"
+        );
+    }
+
+    async function openHypothesisPage() {
+        const item = visibleResults[selectedResultIndex];
+        if (!item || item.type !== "hypothesisPage") return;
+        await chromeService.createTab({ url: item.url, active: true });
     }
 
     function goBackToSectionPicker() {
@@ -160,6 +452,33 @@
         if (PLACEHOLDER_SECTION_IDS.has(primary)) {
             visibleResults = [];
             selectedResultIndex = 0;
+            return;
+        }
+
+        if (primary === "news") {
+            if (newsView === "detail") {
+                return;
+            }
+            applyNewsVisibleResults();
+            const maxIdx = Math.max(0, visibleResults.length - 1);
+            selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+            return;
+        }
+
+        if (primary === "trending") {
+            if (trendingView === "detail") {
+                return;
+            }
+            applyTrendingVisibleResults();
+            const maxIdx = Math.max(0, visibleResults.length - 1);
+            selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
+            return;
+        }
+
+        if (primary === "highlights") {
+            applyHighlightsVisibleResults();
+            const maxIdx = Math.max(0, visibleResults.length - 1);
+            selectedResultIndex = Math.min(selectedResultIndex, maxIdx);
             return;
         }
 
@@ -277,6 +596,14 @@
             (event.key === "Backspace" || event.key === "Delete")
         ) {
             event.preventDefault();
+            if (activeSections[0] === "news" && newsView === "detail") {
+                newsDetailBackToList();
+                return;
+            }
+            if (activeSections[0] === "trending" && trendingView === "detail") {
+                trendingDetailBackToList();
+                return;
+            }
             goBackToSectionPicker();
             return;
         }
@@ -287,9 +614,26 @@
             event.preventDefault();
             if (inPicker) {
                 expandIntoSection(SECTIONS[selectedSectionIndex].id);
+            } else if (isNewsListWithSelection()) {
+                void openNewsGoogleSearch();
+            } else if (isTrendingListWithSelection()) {
+                void openTrendingGoogleSearch();
+            } else if (isHighlightsListWithSelection()) {
+                void openHypothesisPage();
             } else {
                 activateSelected();
             }
+            return;
+        }
+
+        if (
+            event.key === " " &&
+            !inPicker &&
+            sectionResultsOpen &&
+            isHighlightsListWithSelection()
+        ) {
+            event.preventDefault();
+            void openHypothesisPage();
             return;
         }
 
@@ -297,6 +641,10 @@
             event.preventDefault();
             if (inPicker) {
                 expandIntoSection(SECTIONS[selectedSectionIndex].id);
+            } else if (isNewsListWithSelection()) {
+                void openNewsDetail();
+            } else if (isTrendingListWithSelection()) {
+                void openTrendingDetail();
             } else {
                 activateSelected();
             }
@@ -338,6 +686,16 @@
             }
         }
 
+        if (
+            (activeSections[0] === "news" && newsView === "detail") ||
+            (activeSections[0] === "trending" && trendingView === "detail")
+        ) {
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                event.preventDefault();
+                return;
+            }
+        }
+
         if (event.key === "ArrowUp") {
             event.preventDefault();
             moveSelection(-1);
@@ -354,6 +712,20 @@
         }
         if (event.key === "Enter") {
             event.preventDefault();
+            if (activeSections[0] === "news" && newsView === "detail") {
+                return;
+            }
+            if (activeSections[0] === "trending" && trendingView === "detail") {
+                return;
+            }
+            if (visibleResults[selectedResultIndex]?.type === "news") {
+                void openNewsDetail();
+                return;
+            }
+            if (visibleResults[selectedResultIndex]?.type === "trending") {
+                void openTrendingDetail();
+                return;
+            }
             activateSelected();
         }
     }
@@ -363,6 +735,12 @@
         const t = event.target;
         const el = t instanceof Element ? t : t?.parentElement;
         if (el?.closest(".section-strip-scroll")) {
+            return;
+        }
+        if (
+            el?.closest(".news-detail-scroll") ||
+            el?.closest(".trending-detail-scroll")
+        ) {
             return;
         }
 
@@ -414,6 +792,25 @@
             return;
         }
 
+        if (item.type === "news") {
+            if (newsView === "detail") return;
+            await openNewsDetail();
+            return;
+        }
+
+        if (item.type === "trending") {
+            if (trendingView === "detail") return;
+            await openTrendingDetail();
+            return;
+        }
+
+        if (item.type === "hypothesisPage") {
+            await chromeService.createTab({ url: item.url, active: true });
+            dispatch("submit");
+            dispatch("close");
+            return;
+        }
+
         if (item.type === "tab") {
             await chromeService.activateTab(item.id);
         } else if (
@@ -438,6 +835,9 @@
             tab: "tab",
             bookmark: "bookmark",
             history: "history",
+            news: "newspaper",
+            trending: "trending_up",
+            hypothesisPage: "highlight",
         };
         return icons[item.type] || "link";
     }
@@ -460,13 +860,32 @@
             bookmarks: q ? `No bookmarks match '${q}'` : "No bookmarks",
             history: q ? `No history matches '${q}'` : "No recent history",
             tasks: "Tasks are not available yet",
-            news: "News is not available yet",
-            trending: "Trending is not available yet",
+            news: newsListError
+                ? newsListError
+                : newsListLoading
+                  ? "Loading news…"
+                  : q
+                    ? `No headlines match '${q}'`
+                    : "No headlines",
+            trending: trendingListError
+                ? trendingListError
+                : trendingListLoading
+                  ? "Loading trending topics…"
+                  : q
+                    ? `No topics match '${q}'`
+                    : "No trending topics",
             reading: "Reading is not available yet",
             shopping: "Shopping is not available yet",
             learning: "Learning is not available yet",
             data: "Data is not available yet",
             files: "Files are not available yet",
+            highlights: highlightsListError
+                ? highlightsListError
+                : highlightsListLoading
+                  ? "Loading Hypothesis highlights…"
+                  : q
+                    ? `No pages match '${q}'`
+                    : "No highlights on web pages yet",
         };
         return messages[primarySection] || "";
     }
@@ -569,10 +988,56 @@
                 </div>
             {:else}
                 <div class="results-body">
-                    {#if loading && visibleResults.length === 0}
-                        <div class="empty-state">Loading...</div>
+                    {#if activeSections[0] === "news" && newsView === "detail"}
+                        <div class="news-detail-panel">
+                            <div class="news-detail-hint">
+                                Backspace — back to headlines
+                            </div>
+                            {#if newsDetailLoading}
+                                <div class="empty-state">Loading details…</div>
+                            {:else if newsDetailError}
+                                <div class="empty-state news-detail-error">
+                                    {newsDetailError}
+                                </div>
+                            {:else}
+                                <div class="news-detail-scroll">
+                                    <div class="news-detail-text">
+                                        {newsDetailText}
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
+                    {:else if activeSections[0] === "trending" && trendingView === "detail"}
+                        <div class="news-detail-panel">
+                            <div class="news-detail-hint">
+                                Backspace — back to topic list
+                            </div>
+                            {#if trendingDetailLoading}
+                                <div class="empty-state">Loading details…</div>
+                            {:else if trendingDetailError}
+                                <div class="empty-state news-detail-error">
+                                    {trendingDetailError}
+                                </div>
+                            {:else}
+                                <div class="trending-detail-scroll">
+                                    <div class="news-detail-text">
+                                        {trendingDetailText}
+                                    </div>
+                                </div>
+                            {/if}
+                        </div>
                     {:else if visibleResults.length === 0}
-                        <div class="empty-state">{getEmptyMessage()}</div>
+                        {#if loading && activeSections[0] !== "news" && activeSections[0] !== "trending" && activeSections[0] !== "highlights"}
+                            <div class="empty-state">Loading...</div>
+                        {:else if activeSections[0] === "news" && newsListLoading && !newsListError}
+                            <div class="empty-state">Loading news…</div>
+                        {:else if activeSections[0] === "trending" && trendingListLoading && !trendingListError}
+                            <div class="empty-state">Loading trending topics…</div>
+                        {:else if activeSections[0] === "highlights" && highlightsListLoading && !highlightsListError}
+                            <div class="empty-state">Loading highlights…</div>
+                        {:else}
+                            <div class="empty-state">{getEmptyMessage()}</div>
+                        {/if}
                     {:else}
                         <div
                             bind:this={resultsListEl}
@@ -950,6 +1415,42 @@
         color: var(--st-text-muted, #888);
         font-size: 14px;
         text-align: center;
+    }
+
+    .news-detail-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 120px;
+        max-height: 320px;
+    }
+
+    .news-detail-hint {
+        flex-shrink: 0;
+        padding: 8px 12px;
+        font-size: 11px;
+        color: var(--st-text-muted, #888);
+        border-bottom: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.08));
+    }
+
+    .news-detail-scroll,
+    .trending-detail-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 12px 14px;
+    }
+
+    .news-detail-text {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--st-text-primary, #eee);
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .news-detail-error {
+        color: var(--st-text-primary, #f0a0a0);
     }
 
     .url-hint {

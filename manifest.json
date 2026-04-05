@@ -10,7 +10,9 @@
         "history",
         "sessions",
         "storage",
-        "scripting"
+        "unlimitedStorage",
+        "scripting",
+        "alarms"
     ],
     "background": {
         "service_worker": "background.js",
@@ -31,5 +33,6 @@
     ],
     "host_permissions": [
         "<all_urls>"
-    ]
+    ],
+    "options_page": "options.html"
 }

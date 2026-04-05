@@ -1,6 +1,9 @@
 export class Resource {
-    constructor({ title, url, favIconUrl, highlights = [], data = {} } = {}) {
-        this.id = Math.random().toString(36).substring(2, 9);
+    constructor({ id, title, url, favIconUrl, highlights = [], data = {} } = {}) {
+        this.id =
+            id != null && id !== ""
+                ? id
+                : Math.random().toString(36).substring(2, 9);
         this.title = title;
         this.url = url;
         this.favIconUrl = favIconUrl;
@@ -10,6 +13,7 @@ export class Resource {
 
     static fromJSON(json) {
         return new Resource({
+            id: json.id,
             title: json.title,
             url: json.url,
             favIconUrl: json.favIconUrl,

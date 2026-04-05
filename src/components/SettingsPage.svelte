@@ -12,6 +12,11 @@
         if (Number.isNaN(n)) return;
         onChange({ [field]: n });
     }
+
+    function openExtensionOptions() {
+        // Content scripts cannot call openOptionsPage; background handles it.
+        chrome.runtime.sendMessage({ type: "OPEN_OPTIONS_PAGE" });
+    }
 </script>
 
 <div
@@ -88,6 +93,18 @@
                 Accumulated wheel delta before switching windows / carousel slides (horizontal scroll).
             </p>
         </section>
+        <p class="settings-page__options">
+            <button
+                type="button"
+                class="settings-page__options-link"
+                on:click={openExtensionOptions}
+            >
+                Extension options…
+            </button>
+            <span class="settings-page__options-note">
+                Shortcuts, API keys, and other preferences
+            </span>
+        </p>
     </div>
 </div>
 
@@ -173,6 +190,39 @@
 
     .settings-page__hint {
         margin: 8px 0 0;
+        font-size: 11px;
+        color: var(--st-text-secondary, #888);
+    }
+
+    .settings-page__options {
+        margin: 20px 0 0;
+        padding-top: 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .settings-page__options-link {
+        align-self: flex-start;
+        margin: 0;
+        padding: 0;
+        border: none;
+        background: none;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        color: rgba(140, 190, 255, 0.95);
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    .settings-page__options-link:hover {
+        color: rgba(170, 210, 255, 1);
+    }
+
+    .settings-page__options-note {
         font-size: 11px;
         color: var(--st-text-secondary, #888);
     }
