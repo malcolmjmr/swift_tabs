@@ -556,6 +556,8 @@
 
     .list-slide-scroll,
     .slide-body-scroll {
+        display: flex;
+        flex-direction: column;
         flex: 1 1 auto;
         min-height: 0;
         overflow-x: hidden;

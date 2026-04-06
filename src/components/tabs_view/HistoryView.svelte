@@ -3,7 +3,7 @@
      * History: root categories (counts) + drill-in lists (recent, saved, other devices).
      * See docs/interfaces/interface_tabs_view.md
      */
-    import { onMount } from "svelte";
+    import { onMount, tick, onDestroy } from "svelte";
     import { chromeService } from "../../services/chromeApi";
 
     /** Currently highlighted row key (for keyboard + Space) */
@@ -24,6 +24,11 @@
     let loadError = null;
 
     let rows = [];
+
+    /** Scroll container for list rows (treadmill scroll sync). */
+    let historyListEl = null;
+    /** @type {ResizeObserver | null} */
+    let listResizeObserver = null;
 
     const ROOT_KEYS = {
         recent: "root-recent",
@@ -424,6 +429,126 @@
         selectedRowKey = row.key;
         void activateRow(row);
     }
+
+    const OVERFLOW_EPS = 2;
+
+    /** @param {HTMLElement} el @param {HTMLElement} scroller */
+    function contentOffsetTop(el, scroller) {
+        const sr = scroller.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        return er.top - sr.top + scroller.scrollTop;
+    }
+
+    /**
+     * Match keyboard selection treadmill: fixed highlight slot when list overflows.
+     * @param {boolean} instant - false after selection: smooth scroll; true on resize: snap.
+     */
+    function syncHistoryListScrollForSelection(instant = true) {
+        if (!historyListEl || selectedRowKey == null || !rows.length) return;
+
+        const scroller = historyListEl;
+        function setScrollTop(target) {
+            const maxScroll = Math.max(
+                0,
+                scroller.scrollHeight - scroller.clientHeight,
+            );
+            const t = Math.max(0, Math.min(maxScroll, target));
+            if (Math.abs(scroller.scrollTop - t) < 2) return;
+            if (instant) {
+                scroller.scrollTop = t;
+            } else {
+                scroller.scrollTo({ top: t, behavior: "smooth" });
+            }
+        }
+
+        if (scroller.scrollHeight <= scroller.clientHeight + OVERFLOW_EPS) {
+            if (scroller.scrollTop !== 0) setScrollTop(0);
+            return;
+        }
+
+        const items = scroller.querySelectorAll("button[data-history-row-key]");
+        if (items.length === 0) return;
+
+        const esc =
+            typeof CSS !== "undefined" && typeof CSS.escape === "function"
+                ? CSS.escape(selectedRowKey)
+                : selectedRowKey.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const selectedEl = scroller.querySelector(
+            `button[data-history-row-key="${esc}"]`,
+        );
+        if (!selectedEl) return;
+
+        let selectedIndex = -1;
+        items.forEach((el, i) => {
+            if (el === selectedEl) selectedIndex = i;
+        });
+        if (selectedIndex < 0) return;
+
+        /** Mixed row heights (device window headers vs tabs, recent detail rows). */
+        const stepSamples = [];
+        const sampleEnd = Math.min(items.length, 24);
+        for (let i = 1; i < sampleEnd; i++) {
+            const d =
+                contentOffsetTop(items[i], scroller) -
+                contentOffsetTop(items[i - 1], scroller);
+            if (d > 1) stepSamples.push(d);
+        }
+        const rowStep =
+            stepSamples.length > 0
+                ? stepSamples.reduce((a, b) => a + b, 0) / stepSamples.length
+                : selectedEl.getBoundingClientRect().height;
+        if (rowStep <= 0) return;
+
+        const visibleCount = Math.max(
+            1,
+            Math.floor(scroller.clientHeight / rowStep),
+        );
+        let anchorIndex = Math.floor((visibleCount - 1) / 2);
+        anchorIndex = Math.min(anchorIndex, items.length - 1);
+
+        const ySel = contentOffsetTop(items[selectedIndex], scroller);
+        const yAnchor = contentOffsetTop(items[anchorIndex], scroller);
+        setScrollTop(ySel - yAnchor);
+    }
+
+    function scheduleHistoryListScrollAfterSelection() {
+        tick().then(() => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    syncHistoryListScrollForSelection(false);
+                });
+            });
+        });
+    }
+
+    $: if (historyListEl && typeof ResizeObserver !== "undefined") {
+        listResizeObserver?.disconnect();
+        listResizeObserver = new ResizeObserver(() => {
+            syncHistoryListScrollForSelection(true);
+        });
+        listResizeObserver.observe(historyListEl);
+    } else {
+        listResizeObserver?.disconnect();
+        listResizeObserver = null;
+    }
+
+    onDestroy(() => {
+        listResizeObserver?.disconnect();
+        listResizeObserver = null;
+    });
+
+    $: historyListScrollSyncKey =
+        selectedRowKey != null && rows.length
+            ? [
+                  historyPane,
+                  selectedRowKey,
+                  rows.map((r) => r.key).join(","),
+              ].join("|")
+            : "";
+
+    $: if (historyListEl && historyListScrollSyncKey) {
+        scheduleHistoryListScrollAfterSelection();
+    }
 </script>
 
 <div class="history-view">
@@ -464,7 +589,13 @@
             {/if}
         </p>
     {:else}
-        <ul class="history-list" role="listbox" aria-label={sectionHeading}>
+        <ul
+            class="history-list"
+            bind:this={historyListEl}
+            role="listbox"
+            aria-label={sectionHeading}
+        >
+            <div class="history-list-padding"></div>
             {#each rows as row (row.key)}
                 <li
                     class:history-li-divider={row.isWindowDivider}
@@ -483,6 +614,7 @@
                             class:history-item--section={true}
                             class:history-item--placeholder={row.isPlaceholder}
                             class:selected={row.key === selectedRowKey}
+                            data-history-row-key={row.key}
                             on:click={() => onRowClick(row)}
                         >
                             <span
@@ -504,6 +636,7 @@
                                 type="button"
                                 class="history-window-header history-window-header--action"
                                 class:selected={row.key === selectedRowKey}
+                                data-history-row-key={row.key}
                                 disabled={!row.windowSessionId}
                                 aria-label={row.key === selectedRowKey &&
                                 row.windowSessionId
@@ -515,8 +648,15 @@
                                     <span class="history-window-header-title">
                                         {#if row.key === selectedRowKey && row.windowSessionId}
                                             <span
-                                                >Restore Window ({row.tabCount} tabs)</span
+                                                >Restore - Window {row.windowOrdinal}
+                                                ({row.tabCount}
+                                                tabs)</span
                                             >
+                                            <span
+                                                class="history-window-header-spacer"
+                                                aria-hidden="true"
+                                            ></span>
+
                                             <kbd
                                                 class="history-window-header-kbd"
                                                 >Space</kbd
@@ -534,6 +674,7 @@
                                 class="history-item"
                                 class:history-item--placeholder={row.isPlaceholder}
                                 class:selected={row.key === selectedRowKey}
+                                data-history-row-key={row.key}
                                 on:click={() => onRowClick(row)}
                             >
                                 {#if row.favIconUrl}
@@ -578,6 +719,7 @@
                             class="history-item"
                             class:history-item--placeholder={row.isPlaceholder}
                             class:selected={row.key === selectedRowKey}
+                            data-history-row-key={row.key}
                             on:click={() => onRowClick(row)}
                         >
                             {#if row.iconKind === "favicon"}
@@ -631,9 +773,11 @@
     .history-view {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+
         width: 100%;
-        min-height: 120px;
+        flex: 1 1 0;
+        min-height: 0;
+        min-width: 0;
         box-sizing: border-box;
         font-size: 14px;
         font-family:
@@ -643,6 +787,7 @@
     }
 
     .history-header {
+        flex-shrink: 0;
         display: flex;
         flex-direction: row;
         align-items: center;
@@ -732,7 +877,14 @@
         display: flex;
         flex-direction: column;
         gap: 5px;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    .history-list-padding {
+        height: 10px;
     }
 
     .history-list > li {
