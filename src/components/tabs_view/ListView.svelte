@@ -71,6 +71,7 @@
         display: flex;
         flex-direction: column;
         width: 100%;
+        min-height: 0;
         padding: 0;
         border-radius: 6px;
         background: transparent;

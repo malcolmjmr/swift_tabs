@@ -3,12 +3,11 @@
      * Navigation overlay: optional history + window slides + create slide; view modes;
      * quick actions; overscroll view picker. See docs/interfaces/interface_tabs_view.md
      */
-    import { tick, createEventDispatcher } from "svelte";
+    import { tick, createEventDispatcher, onDestroy } from "svelte";
     import GalleryView from "./GalleryView.svelte";
     import IconView from "./IconView.svelte";
     import ListView from "./ListView.svelte";
     import HistoryView from "./HistoryView.svelte";
-    import OverscrollRevealHost from "./OverscrollRevealHost.svelte";
 
     const dispatch = createEventDispatcher();
 
@@ -34,6 +33,8 @@
     export let overviewFocusedWindowIndex = 0;
 
     let trackEl = null;
+    /** @type {ResizeObserver | null} */
+    let trackResizeObserver = null;
     let programmaticScroll = false;
     let viewPickerRevealed = false;
 
@@ -228,6 +229,123 @@
         }
         slideIndex = nWindows + 1;
     }
+
+    const OVERFLOW_EPS = 2;
+
+    /** @param {HTMLElement} el @param {HTMLElement} scroller */
+    function contentOffsetTop(el, scroller) {
+        const sr = scroller.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        return er.top - sr.top + scroller.scrollTop;
+    }
+
+    /**
+     * @param {boolean} instant - true for resize/layout: snap scroll. false: smooth after selection paint.
+     */
+    function syncListScrollForSelection(instant = true) {
+        if (
+            viewMode !== "list" ||
+            kind !== "window" ||
+            !activeWindow ||
+            !selectedTab ||
+            selectedTab.windowId !== activeWindow.id ||
+            !trackEl
+        ) {
+            return;
+        }
+        const scroller = trackEl.querySelector(
+            `section.slide[data-window-id="${activeWindow.id}"] .list-slide-scroll`,
+        );
+        if (!scroller) return;
+
+        function setScrollTop(target) {
+            const t = Math.max(
+                0,
+                Math.min(
+                    Math.max(0, scroller.scrollHeight - scroller.clientHeight),
+                    target,
+                ),
+            );
+            if (Math.abs(scroller.scrollTop - t) < 2) return;
+            if (instant) {
+                scroller.scrollTop = t;
+            } else {
+                scroller.scrollTo({ top: t, behavior: "smooth" });
+            }
+        }
+
+        if (scroller.scrollHeight <= scroller.clientHeight + OVERFLOW_EPS) {
+            if (scroller.scrollTop !== 0) setScrollTop(0);
+            return;
+        }
+
+        const items = scroller.querySelectorAll(".list-view-item");
+        if (items.length === 0) return;
+
+        const tabs = sortedTabs(activeWindow);
+        const selectedIndex = tabs.findIndex((t) => t.id === selectedTab.id);
+        if (selectedIndex < 0) return;
+
+        const row0 = items[0];
+        const row1 = items.length > 1 ? items[1] : row0;
+        const rowStep =
+            row1.offsetTop - row0.offsetTop ||
+            row0.getBoundingClientRect().height;
+        if (rowStep <= 0) return;
+
+        const visibleCount = Math.max(
+            1,
+            Math.floor(scroller.clientHeight / rowStep),
+        );
+        let anchorIndex = Math.floor((visibleCount - 1) / 2);
+        anchorIndex = Math.min(anchorIndex, items.length - 1);
+
+        const ySel = contentOffsetTop(items[selectedIndex], scroller);
+        const yAnchor = contentOffsetTop(items[anchorIndex], scroller);
+        setScrollTop(ySel - yAnchor);
+    }
+
+    /** Selection paints on first frames; then smooth-scroll the list. */
+    function scheduleListScrollSyncAfterSelection() {
+        tick().then(() => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    syncListScrollForSelection(false);
+                });
+            });
+        });
+    }
+
+    $: if (trackEl && typeof ResizeObserver !== "undefined") {
+        trackResizeObserver?.disconnect();
+        trackResizeObserver = new ResizeObserver(() => {
+            syncListScrollForSelection(true);
+        });
+        trackResizeObserver.observe(trackEl);
+    }
+
+    onDestroy(() => {
+        trackResizeObserver?.disconnect();
+        trackResizeObserver = null;
+    });
+
+    $: listScrollSyncKey =
+        viewMode === "list" &&
+        kind === "window" &&
+        activeWindow &&
+        selectedTab?.windowId === activeWindow.id
+            ? [
+                  selectedTab.id,
+                  slideIndex,
+                  sortedTabs(activeWindow)
+                      .map((t) => t.id)
+                      .join(","),
+              ].join("|")
+            : "";
+
+    $: if (trackEl && listScrollSyncKey) {
+        scheduleListScrollSyncAfterSelection();
+    }
 </script>
 
 {#if nWindows > 0}
@@ -267,13 +385,18 @@
         {:else}
             <div class="track" bind:this={trackEl} on:scroll={onTrackScroll}>
                 {#if includeEdgeSlides}
-                    <section class="slide">
-                        <HistoryView bind:this={historyViewRef} />
+                    <section class="slide slide--column">
+                        <div class="slide-body-scroll">
+                            <HistoryView bind:this={historyViewRef} />
+                        </div>
                     </section>
                 {/if}
                 {#each windowsList as win (win.id)}
                     {@const tabs = sortedTabs(win)}
-                    <section class="slide">
+                    <section
+                        class="slide slide--column"
+                        data-window-id={win.id}
+                    >
                         {#if windowsList.length > 1 || win.name}
                             <div class="group-header">
                                 <div class="group-label">
@@ -285,42 +408,53 @@
                             </div>
                         {/if}
                         {#if viewMode === "icon"}
-                            <IconView
-                                {tabs}
-                                {multiSelectedIds}
-                                bind:selectedTab
-                                bind:currentTab
-                                on:activatetab={forwardTabActivate}
-                            />
+                            <div class="slide-body-scroll">
+                                <IconView
+                                    {tabs}
+                                    {multiSelectedIds}
+                                    bind:selectedTab
+                                    bind:currentTab
+                                    on:activatetab={forwardTabActivate}
+                                />
+                            </div>
                         {:else if viewMode === "gallery"}
-                            <GalleryView
-                                {tabs}
-                                {multiSelectedIds}
-                                {currentTab}
-                                bind:selectedTab
-                                on:activatetab={forwardTabActivate}
-                            />
+                            <div class="slide-body-scroll">
+                                <GalleryView
+                                    {tabs}
+                                    {multiSelectedIds}
+                                    {currentTab}
+                                    bind:selectedTab
+                                    on:activatetab={forwardTabActivate}
+                                />
+                            </div>
                         {:else}
-                            <ListView
-                                {tabs}
-                                {multiSelectedIds}
-                                bind:currentTab
-                                bind:selectedTab
-                                on:activatetab={forwardTabActivate}
-                            />
+                            <div class="list-slide-scroll">
+                                <ListView
+                                    {tabs}
+                                    {multiSelectedIds}
+                                    bind:currentTab
+                                    bind:selectedTab
+                                    on:activatetab={forwardTabActivate}
+                                />
+                            </div>
                         {/if}
                     </section>
                 {/each}
                 {#if includeEdgeSlides}
-                    <section class="slide">
-                        <div class="create-slide">
-                            <div class="edge-label">New window</div>
-                            <p class="create-hint">
-                                Tap <kbd>Space</kbd> to open a new window.
-                            </p>
-                            <p class="create-hint">
-                                Hold <kbd>Space</kbd> to open a new incognito window.
-                            </p>
+                    <section class="slide slide--column">
+                        <div
+                            class="slide-body-scroll slide-body-scroll--center"
+                        >
+                            <div class="create-slide">
+                                <div class="edge-label">New window</div>
+                                <p class="create-hint">
+                                    Tap <kbd>Space</kbd> to open a new window.
+                                </p>
+                                <p class="create-hint">
+                                    Hold <kbd>Space</kbd> to open a new incognito
+                                    window.
+                                </p>
+                            </div>
                         </div>
                     </section>
                 {/if}
@@ -388,7 +522,7 @@
             -apple-system,
             sans-serif;
         overflow-x: hidden;
-        overflow-y: auto;
+        overflow-y: hidden;
     }
 
     .track {
@@ -396,11 +530,13 @@
         flex-direction: row;
         flex-wrap: nowrap;
         width: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: min(50vh, 420px);
         overflow-x: auto;
         overflow-y: hidden;
         scroll-snap-type: x mandatory;
         scrollbar-width: thin;
-        min-height: 0;
     }
 
     .slide {
@@ -411,6 +547,28 @@
         box-sizing: border-box;
     }
 
+    .slide--column {
+        display: flex;
+        flex-direction: column;
+        align-self: stretch;
+        min-height: 0;
+    }
+
+    .list-slide-scroll,
+    .slide-body-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    .slide-body-scroll--center {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
     .group-header {
         display: flex;
         flex-direction: row;
@@ -418,6 +576,7 @@
         justify-content: space-between;
         padding: 0px 2px;
         margin: 0px 10px;
+        min-height: 40px;
         height: 40px;
         border-bottom: 1px solid #333333;
     }
@@ -488,7 +647,11 @@
 
     .overview-wrap {
         width: 100%;
-        min-height: 120px;
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: min(50vh, 420px);
+        overflow-y: auto;
+        scrollbar-width: thin;
     }
 
     .overview-section {
