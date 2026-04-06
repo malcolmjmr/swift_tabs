@@ -1,6 +1,6 @@
 <script>
     /**
-     * Recently closed sessions, open tab groups, saved session folders (bookmarks).
+     * History: root categories (counts) + drill-in lists (recent, saved, other devices).
      * See docs/interfaces/interface_tabs_view.md
      */
     import { onMount } from "svelte";
@@ -9,24 +9,117 @@
     /** Currently highlighted row key (for keyboard + Space) */
     export let selectedRowKey = null;
 
+    /** @type {'root' | 'recent' | 'saved' | 'devices' | 'deviceTabs'} */
+    let historyPane = "root";
+
     let recentlyClosed = [];
-    let groups = [];
     let savedFolders = [];
+    /**
+     * From GET_SESSIONS_OTHER_DEVICES: { deviceName, isPlaceholder?, windows: [{ key, tabs: [...] }] }[]
+     */
+    let deviceGroups = [];
+    /** Device whose tabs are shown in `deviceTabs` */
+    let activeDeviceName = null;
+
     let loadError = null;
 
     let rows = [];
 
+    const ROOT_KEYS = {
+        recent: "root-recent",
+        saved: "root-saved",
+        devices: "root-devices",
+    };
+
+    function labelRecentlyClosedSession(s) {
+        if (s.tab) {
+            return s.tab.title || s.tab.url || "Tab";
+        }
+        if (s.window) {
+            const n = s.window.tabs?.length ?? 0;
+            return n > 1
+                ? `Window (${n} tabs)`
+                : s.window.tabs?.[0]?.title || "Window";
+        }
+        return "Session";
+    }
+
+    function hostnameFromUrl(url) {
+        if (!url || typeof url !== "string") return "";
+        try {
+            const u = new URL(url);
+            return u.hostname || "";
+        } catch {
+            return "";
+        }
+    }
+
+    /** Chrome usually uses ms; some values arrive as UNIX seconds. */
+    function normalizeSessionTimestampMs(raw) {
+        if (raw == null || !Number.isFinite(Number(raw))) return NaN;
+        const n = Number(raw);
+        if (n < 1e12) return n * 1000;
+        return n;
+    }
+
+    /** @param {number | undefined} lastModifiedRaw */
+    function formatClosedAgo(lastModifiedRaw) {
+        const lastModifiedMs = normalizeSessionTimestampMs(lastModifiedRaw);
+        if (!Number.isFinite(lastModifiedMs)) return "";
+        const sec = Math.max(0, (Date.now() - lastModifiedMs) / 1000);
+        if (sec < 45) return "Just now";
+        if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+        if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+        if (sec < 604800) return `${Math.floor(sec / 86400)}d ago`;
+        return new Date(lastModifiedMs).toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+        });
+    }
+
+    /** Device tab subtitle: time only if today, else month/day + time. */
+    function formatSessionSubtitleWhen(lastModifiedRaw) {
+        const ms = normalizeSessionTimestampMs(lastModifiedRaw);
+        if (!Number.isFinite(ms)) return "";
+        const d = new Date(ms);
+        const now = new Date();
+        const isToday =
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth() &&
+            d.getDate() === now.getDate();
+        const timeStr = d.toLocaleTimeString(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
+        });
+        if (isToday) return timeStr;
+        const dateStr = d.toLocaleDateString(undefined, {
+            month: "short",
+            day: "numeric",
+        });
+        return `${dateStr}, ${timeStr}`;
+    }
+
+    function deviceTabCount(g) {
+        if (!g || g.isPlaceholder) return 0;
+        return (g.windows || []).reduce((n, w) => n + (w.tabs || []).length, 0);
+    }
+
     async function load() {
         loadError = null;
         try {
-            const [closed, grp, folders] = await Promise.all([
+            const [closed, folders] = await Promise.all([
                 chromeService.getRecentlyClosed(),
-                chromeService.getTabGroups(),
                 chromeService.getSessionsFolderBookmarks(),
             ]);
+            let other = [];
+            try {
+                other = await chromeService.getSessionsOtherDevices();
+            } catch (e) {
+                console.warn("Swift Tabs: getSessionsOtherDevices failed", e);
+            }
             recentlyClosed = closed || [];
-            groups = grp || [];
             savedFolders = folders || [];
+            deviceGroups = Array.isArray(other) ? other : [];
             rebuildRows();
         } catch (e) {
             loadError = e?.message || "Failed to load";
@@ -34,54 +127,204 @@
         }
     }
 
+    $: sectionHeading =
+        historyPane === "deviceTabs"
+            ? activeDeviceName || "Device"
+            : historyPane === "recent"
+              ? "Recent tabs"
+              : historyPane === "saved"
+                ? "Saved sessions"
+                : historyPane === "devices"
+                  ? "Other devices"
+                  : "History";
+
     function rebuildRows() {
-        const r = [];
-        let ids = [];
-        for (const s of recentlyClosed) {
-            const id = s.sessionId;
-            if (id === null || ids.includes(id)) continue;
-            ids.push(id);
-            let label = "Session";
-            if (s.tab) {
-                label = s.tab.title || s.tab.url || "Tab";
-            } else if (s.window) {
-                const n = s.window.tabs?.length ?? 0;
-                label =
-                    n > 1
-                        ? `Window (${n} tabs)`
-                        : s.window.tabs?.[0]?.title || "Window";
-            }
-            r.push({
-                key: `c-${id}`,
-                sessionId: id,
-                label,
-                sub: "Recently closed",
+        if (historyPane === "root") {
+            rows = [
+                {
+                    key: ROOT_KEYS.recent,
+                    section: "recent",
+                    label: "Recent tabs",
+                    count: recentlyClosed.length,
+                    rowIcon: "history",
+                },
+                {
+                    key: ROOT_KEYS.saved,
+                    section: "saved",
+                    label: "Saved sessions",
+                    count: savedFolders.length,
+                    rowIcon: "folder_special",
+                },
+                {
+                    key: ROOT_KEYS.devices,
+                    section: "devices",
+                    label: "Other devices",
+                    count: deviceGroups.length,
+                    rowIcon: "devices",
+                },
+            ];
+        } else if (historyPane === "recent") {
+            rows = recentlyClosed.map((s, i) => {
+                const subTime = formatClosedAgo(s.lastModified);
+                if (s.tab) {
+                    return {
+                        key: `c-${s.tab.sessionId}-${s.tab.index}`,
+                        sessionId: s.tab.sessionId,
+                        label: labelRecentlyClosedSession(s),
+                        iconKind: "favicon",
+                        favIconUrl: s.tab.favIconUrl || null,
+                        rowIcon: "tab",
+                        subDomain: hostnameFromUrl(s.tab.url),
+                        subTime,
+                    };
+                }
+                const first = s.window?.tabs?.[0];
+                const n = s.window?.tabs?.length ?? 0;
+                return {
+                    key: `c-w-${s.lastModified}-${i}`,
+                    sessionId: s.window?.sessionId ?? s.sessionId,
+                    label: labelRecentlyClosedSession(s),
+                    iconKind: "favicon",
+                    favIconUrl: first?.favIconUrl ?? null,
+                    rowIcon: "select_window_2",
+                    subDomain:
+                        hostnameFromUrl(first?.url) ||
+                        (n > 1 ? `${n} tabs` : "") ||
+                        "Window",
+                    subTime,
+                };
             });
-        }
-        for (const g of groups) {
-            r.push({
-                key: `g-${g.id}`,
-                groupId: g.id,
-                windowId: g.windowId,
-                label: g.title,
-                sub: `${g.tabCount} tabs · group`,
-            });
-        }
-        for (const f of savedFolders) {
-            r.push({
+        } else if (historyPane === "saved") {
+            rows = savedFolders.map((f) => ({
                 key: `b-${f.id}`,
                 bookmarkFolderId: f.id,
                 label: f.title,
-                sub: "Saved session folder",
-            });
+                iconKind: "material",
+                rowIcon: "folder",
+                subDomain: "Bookmarks",
+                subTime: "",
+            }));
+        } else if (historyPane === "devices") {
+            rows = deviceGroups.map((g, i) => ({
+                key: `dev-${g.deviceName.replace(/\s+/g, "-")}-${i}`,
+                label: g.deviceName,
+                count: deviceTabCount(g),
+                rowIcon: "devices",
+                isDeviceSummaryRow: true,
+                deviceName: g.deviceName,
+            }));
+        } else if (historyPane === "deviceTabs") {
+            const group = deviceGroups.find(
+                (g) => g.deviceName === activeDeviceName,
+            );
+            const next = [];
+            if (group?.windows?.length) {
+                let wi = 0;
+                for (const win of group.windows) {
+                    wi += 1;
+                    const tabs = win.tabs || [];
+                    if (wi > 1) {
+                        next.push({
+                            key: `wd-${win.key}`,
+                            isWindowDivider: true,
+                        });
+                    }
+                    next.push({
+                        key: `wh-${win.key}`,
+                        isWindowHeader: true,
+                        windowOrdinal: wi,
+                        tabCount: tabs.length,
+                        windowSessionId: win.windowSessionId || null,
+                    });
+                    let ti = 0;
+                    for (const tab of tabs) {
+                        const sid = tab.sessionId;
+                        next.push({
+                            key: `dt-${win.key}-t-${ti}`,
+                            sessionId: sid,
+                            label: tab.label || "Tab",
+                            iconKind: "favicon",
+                            favIconUrl: tab.favIconUrl || null,
+                            rowIcon: "tab",
+                            subDomain: hostnameFromUrl(tab.url) || "",
+                            subTime: formatSessionSubtitleWhen(
+                                tab.lastModified,
+                            ),
+                            isPlaceholder: sid == null || sid === "",
+                        });
+                        ti += 1;
+                    }
+                }
+            }
+            rows = next;
+        } else {
+            rows = [];
         }
-        rows = r;
-        if (selectedRowKey && !r.some((x) => x.key === selectedRowKey)) {
+
+        if (selectedRowKey && !rows.some((x) => x.key === selectedRowKey)) {
             selectedRowKey = null;
         }
-        if (!selectedRowKey && r.length) {
-            selectedRowKey = r[0].key;
+        if (!selectedRowKey && rows.length) {
+            if (historyPane === "deviceTabs") {
+                const firstWin = rows.find(
+                    (r) =>
+                        r.isWindowHeader &&
+                        !r.isWindowDivider &&
+                        r.windowSessionId != null &&
+                        r.windowSessionId !== "",
+                );
+                selectedRowKey =
+                    firstWin?.key ??
+                    rows.find(
+                        (r) =>
+                            !r.isWindowHeader &&
+                            !r.isWindowDivider &&
+                            !r.isPlaceholder &&
+                            r.sessionId != null &&
+                            r.sessionId !== "",
+                    )?.key ??
+                    rows.find((r) => !r.isWindowDivider)?.key ??
+                    null;
+            } else {
+                const first =
+                    rows.find(
+                        (r) =>
+                            !r.isWindowHeader &&
+                            !r.isWindowDivider &&
+                            !r.isPlaceholder &&
+                            r.sessionId != null &&
+                            r.sessionId !== "",
+                    ) ??
+                    rows.find((r) => !r.isWindowHeader && !r.isWindowDivider);
+                selectedRowKey = first?.key ?? null;
+            }
         }
+    }
+
+    function openSection(section) {
+        if (section === "recent") historyPane = "recent";
+        else if (section === "saved") historyPane = "saved";
+        else if (section === "devices") historyPane = "devices";
+        activeDeviceName = null;
+        selectedRowKey = null;
+        rebuildRows();
+    }
+
+    /** @returns {boolean} true if navigated up one level */
+    export function goBack() {
+        if (historyPane === "root") return false;
+        if (historyPane === "deviceTabs") {
+            historyPane = "devices";
+            activeDeviceName = null;
+            selectedRowKey = null;
+            rebuildRows();
+            return true;
+        }
+        historyPane = "root";
+        activeDeviceName = null;
+        selectedRowKey = null;
+        rebuildRows();
+        return true;
     }
 
     onMount(() => {
@@ -97,12 +340,18 @@
     }
 
     export function getSelectedRow() {
-        return rows.find((x) => x.key === selectedRowKey) ?? rows[0];
+        if (selectedRowKey != null) {
+            const r = rows.find((x) => x.key === selectedRowKey);
+            if (r && !r.isWindowDivider) return r;
+        }
+        const first = rows.find((x) => !x.isWindowDivider);
+        return first ?? null;
     }
 
     export async function activateSelectedRow() {
         const row = getSelectedRow();
-        if (row) await activateRow(row);
+        if (!row) return;
+        await activateRow(row);
     }
 
     async function openSavedFolder(folderId) {
@@ -112,12 +361,38 @@
 
     export async function activateRow(row) {
         if (!row) return;
-        if (row.sessionId) {
-            await chromeService.restoreSession(row.sessionId);
+        if (row.isWindowDivider) return;
+        if (row.isWindowHeader) {
+            if (
+                historyPane === "deviceTabs" &&
+                row.windowSessionId != null &&
+                row.windowSessionId !== ""
+            ) {
+                try {
+                    await chromeService.restoreSession(row.windowSessionId);
+                } catch (e) {
+                    console.warn(
+                        "Swift Tabs: restore window session failed",
+                        e,
+                    );
+                }
+            }
             return;
         }
-        if (row.groupId != null && row.windowId != null) {
-            await chromeService.activateTabGroup(row.groupId, row.windowId);
+        if (historyPane === "root" && row.section) {
+            openSection(row.section);
+            return;
+        }
+        if (historyPane === "devices" && row.isDeviceSummaryRow) {
+            activeDeviceName = row.deviceName;
+            historyPane = "deviceTabs";
+            selectedRowKey = null;
+            rebuildRows();
+            return;
+        }
+        if (row.isPlaceholder) return;
+        if (row.sessionId != null && row.sessionId !== "") {
+            await chromeService.restoreSession(row.sessionId);
             return;
         }
         if (row.bookmarkFolderId) {
@@ -127,37 +402,225 @@
 
     export function moveSelection(delta) {
         if (!rows.length) return;
-        const i = rows.findIndex((r) => r.key === selectedRowKey);
-        const cur = i < 0 ? 0 : i;
-        const ni = Math.max(0, Math.min(rows.length - 1, cur + delta));
-        selectedRowKey = rows[ni].key;
+        const selectableIdx =
+            historyPane === "deviceTabs"
+                ? rows
+                      .map((r, i) => (!r.isWindowDivider ? i : -1))
+                      .filter((i) => i >= 0)
+                : rows
+                      .map((r, i) => (!r.isWindowHeader ? i : -1))
+                      .filter((i) => i >= 0);
+        if (!selectableIdx.length) return;
+        const curFull = rows.findIndex((r) => r.key === selectedRowKey);
+        let pos = selectableIdx.indexOf(curFull);
+        if (pos < 0) {
+            pos = delta > 0 ? -1 : selectableIdx.length;
+        }
+        const ni = Math.max(0, Math.min(selectableIdx.length - 1, pos + delta));
+        selectedRowKey = rows[selectableIdx[ni]].key;
+    }
+
+    function onRowClick(row) {
+        selectedRowKey = row.key;
+        void activateRow(row);
     }
 </script>
 
 <div class="history-view">
-    <div class="history-header">History &amp; groups</div>
+    <div
+        class="history-header"
+        class:history-header--natural-case={historyPane === "deviceTabs"}
+    >
+        <span class="history-header-title">{sectionHeading}</span>
+        {#if historyPane !== "root"}
+            <button
+                type="button"
+                class="history-header-escape"
+                aria-label={historyPane === "deviceTabs"
+                    ? "Back to device list (Esc)"
+                    : "Back to history (Esc)"}
+                title="Esc, Backspace, or Delete"
+                on:click={() => goBack()}
+            >
+                <kbd class="history-header-esc-kbd">Esc</kbd>
+            </button>
+        {/if}
+    </div>
     {#if loadError}
         <p class="muted">{loadError}</p>
-    {:else if rows.length === 0}
+    {:else if historyPane !== "root" && rows.length === 0}
         <p class="muted">
-            No recently closed items, groups, or saved sessions.
+            {#if historyPane === "recent"}
+                No recently closed tabs or windows.
+            {:else if historyPane === "saved"}
+                No saved session folders.
+            {:else if historyPane === "devices"}
+                No synced devices. Turn on Chrome sync and open tabs on another
+                device to see them here.
+            {:else if historyPane === "deviceTabs"}
+                No open tabs from this device.
+            {:else}
+                Nothing to show here.
+            {/if}
         </p>
     {:else}
-        <ul class="history-list" role="listbox" aria-label="History and groups">
+        <ul class="history-list" role="listbox" aria-label={sectionHeading}>
             {#each rows as row (row.key)}
-                <li>
-                    <button
-                        type="button"
-                        class="history-item"
-                        class:selected={row.key === selectedRowKey}
-                        on:click={() => {
-                            selectedRowKey = row.key;
-                            activateRow(row);
-                        }}
-                    >
-                        <span class="history-title">{row.label}</span>
-                        <span class="history-sub">{row.sub}</span>
-                    </button>
+                <li
+                    class:history-li-divider={row.isWindowDivider}
+                    class:history-li--window-header={row.isWindowHeader &&
+                        historyPane === "deviceTabs"}
+                >
+                    {#if row.isWindowDivider}
+                        <div
+                            class="history-window-divider-line"
+                            aria-hidden="true"
+                        ></div>
+                    {:else if historyPane === "root" || historyPane === "devices"}
+                        <button
+                            type="button"
+                            class="history-item"
+                            class:history-item--section={true}
+                            class:history-item--placeholder={row.isPlaceholder}
+                            class:selected={row.key === selectedRowKey}
+                            on:click={() => onRowClick(row)}
+                        >
+                            <span
+                                class="history-item-icon material-symbols-rounded"
+                                aria-hidden="true">{row.rowIcon}</span
+                            >
+                            <span class="history-title">{row.label}</span>
+                            <span class="history-count">{row.count}</span>
+                            <span class="history-row-spacer" aria-hidden="true"
+                            ></span>
+                            <span
+                                class="history-chevron material-symbols-rounded"
+                                aria-hidden="true">chevron_right</span
+                            >
+                        </button>
+                    {:else if historyPane === "deviceTabs"}
+                        {#if row.isWindowHeader}
+                            <button
+                                type="button"
+                                class="history-window-header history-window-header--action"
+                                class:selected={row.key === selectedRowKey}
+                                disabled={!row.windowSessionId}
+                                aria-label={row.key === selectedRowKey &&
+                                row.windowSessionId
+                                    ? `Restore window, Space (${row.tabCount} tabs)`
+                                    : `Window ${row.windowOrdinal}, ${row.tabCount} tabs${row.windowSessionId ? ". Select for Space to restore window." : "."}`}
+                                on:click={() => onRowClick(row)}
+                            >
+                                <div class="history-window-header-main">
+                                    <span class="history-window-header-title">
+                                        {#if row.key === selectedRowKey && row.windowSessionId}
+                                            <span
+                                                >Restore Window ({row.tabCount} tabs)</span
+                                            >
+                                            <kbd
+                                                class="history-window-header-kbd"
+                                                >Space</kbd
+                                            >
+                                        {:else}
+                                            Window {row.windowOrdinal} ({row.tabCount}
+                                            tabs)
+                                        {/if}
+                                    </span>
+                                </div>
+                            </button>
+                        {:else}
+                            <button
+                                type="button"
+                                class="history-item"
+                                class:history-item--placeholder={row.isPlaceholder}
+                                class:selected={row.key === selectedRowKey}
+                                on:click={() => onRowClick(row)}
+                            >
+                                {#if row.favIconUrl}
+                                    <img
+                                        src={row.favIconUrl}
+                                        alt=""
+                                        class="history-item-icon history-item-icon-img"
+                                    />
+                                {:else}
+                                    <span
+                                        class="history-item-icon-fallback"
+                                        aria-hidden="true"
+                                        >{(row.label || "?")
+                                            .charAt(0)
+                                            .toUpperCase()}</span
+                                    >
+                                {/if}
+                                <div class="history-detail-text">
+                                    <span class="history-title"
+                                        >{row.label}</span
+                                    >
+                                    {#if row.subDomain || row.subTime}
+                                        <div class="history-sub-row">
+                                            {#if row.subDomain}
+                                                <span class="history-sub-domain"
+                                                    >{row.subDomain}</span
+                                                >
+                                            {/if}
+                                            {#if row.subTime}
+                                                <span class="history-sub-time"
+                                                    >{row.subTime}</span
+                                                >
+                                            {/if}
+                                        </div>
+                                    {/if}
+                                </div>
+                            </button>
+                        {/if}
+                    {:else}
+                        <button
+                            type="button"
+                            class="history-item"
+                            class:history-item--placeholder={row.isPlaceholder}
+                            class:selected={row.key === selectedRowKey}
+                            on:click={() => onRowClick(row)}
+                        >
+                            {#if row.iconKind === "favicon"}
+                                {#if row.favIconUrl}
+                                    <img
+                                        src={row.favIconUrl}
+                                        alt=""
+                                        class="history-item-icon history-item-icon-img"
+                                    />
+                                {:else}
+                                    <span
+                                        class="history-item-icon-fallback"
+                                        aria-hidden="true"
+                                        >{(row.label || "?")
+                                            .charAt(0)
+                                            .toUpperCase()}</span
+                                    >
+                                {/if}
+                            {:else}
+                                <span
+                                    class="history-item-icon material-symbols-rounded"
+                                    aria-hidden="true">{row.rowIcon}</span
+                                >
+                            {/if}
+                            <div class="history-detail-text">
+                                <span class="history-title">{row.label}</span>
+                                {#if row.subDomain || row.subTime}
+                                    <div class="history-sub-row">
+                                        {#if row.subDomain}
+                                            <span class="history-sub-domain"
+                                                >{row.subDomain}</span
+                                            >
+                                        {/if}
+                                        {#if row.subTime}
+                                            <span class="history-sub-time"
+                                                >{row.subTime}</span
+                                            >
+                                        {/if}
+                                    </div>
+                                {/if}
+                            </div>
+                        </button>
+                    {/if}
                 </li>
             {/each}
         </ul>
@@ -168,70 +631,418 @@
     .history-view {
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
         width: 100%;
         min-height: 120px;
+        box-sizing: border-box;
+        font-size: 14px;
+        font-family:
+            system-ui,
+            -apple-system,
+            sans-serif;
     }
 
     .history-header {
-        font-size: 12px;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 16px;
         font-weight: 600;
-        color: var(--st-text-muted, #a0a0a0);
+        color: var(--st-text-muted, #555555);
         text-transform: uppercase;
         letter-spacing: 0.04em;
+        margin: 0 10px;
+        height: 40px;
+        padding: 0 2px;
+        box-sizing: border-box;
+        border-bottom: 1px solid #333333;
+    }
+
+    .history-header--natural-case {
+        text-transform: none;
+        letter-spacing: 0.02em;
+    }
+
+    .history-header-title {
+        flex: 1 1 0%;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    .history-header-escape {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 40px;
+        height: 28px;
+        margin: 0;
+        padding: 0 6px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        background: transparent;
+    }
+
+    .history-header-escape:hover {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.12));
+    }
+
+    .history-header-escape:hover .history-header-esc-kbd {
+        opacity: 1;
+        color: var(--st-text-primary, #e8e8e8);
+    }
+
+    .history-header-esc-kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2em;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        font-family:
+            system-ui,
+            -apple-system,
+            sans-serif;
+        letter-spacing: 0.02em;
+        color: var(--st-text-muted, #a0a0a0);
+        background: #333;
+        opacity: 0.95;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
     }
 
     .muted {
-        margin: 0;
-        font-size: 13px;
+        margin: 0 10px;
+        font-size: 14px;
         color: var(--st-text-muted, #808080);
     }
 
     .history-list {
         list-style: none;
         margin: 0;
-        padding: 0;
+        padding: 0 7px;
         display: flex;
         flex-direction: column;
-        gap: 4px;
-        max-height: min(45vh, 360px);
+        gap: 5px;
         overflow-y: auto;
     }
 
+    .history-list > li {
+        margin: 0;
+    }
+
+    .history-li-divider {
+        list-style: none;
+        margin: 0;
+        padding: 4px 3px 2px;
+        pointer-events: none;
+    }
+
+    .history-window-divider-line {
+        height: 1px;
+        background: var(--st-border-color, rgba(255, 255, 255, 0.12));
+        border-radius: 1px;
+    }
+
+    .history-window-header--action {
+        display: flex;
+        flex-direction: row;
+        align-items: stretch;
+        width: 100%;
+        margin-top: 0;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        box-sizing: border-box;
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+        color: var(--st-text-muted, #888888);
+        transition: background 0.1s;
+    }
+
+    .history-window-header--action:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+
+    .history-window-header--action:hover:not(:disabled):not(.selected) {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
+    }
+
+    .history-window-header--action.selected {
+        background-color: #333333;
+        color: var(--st-text-primary, #e8e8e8);
+    }
+
+    .history-window-header-main {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 12px;
+        width: 100%;
+        box-sizing: border-box;
+        font-size: 15px;
+
+        text-transform: none;
+        letter-spacing: 0.01em;
+    }
+
+    .history-window-header-icon {
+        font-size: 24px;
+
+        text-align: center;
+        opacity: 0.9;
+        font-variation-settings:
+            "FILL" 0,
+            "wght" 500,
+            "GRAD" 0,
+            "opsz" 48;
+    }
+
+    .history-window-header--action.selected .history-window-header-icon {
+        opacity: 1;
+    }
+
+    .history-window-header-title {
+        flex-grow: 1;
+        min-width: 0;
+        text-align: left;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .history-window-header-spacer {
+        flex: 1 1 0%;
+        min-width: 4px;
+    }
+
+    .history-window-header-kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 2px;
+        padding: 1px 7px 2px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family:
+            system-ui,
+            -apple-system,
+            sans-serif;
+        letter-spacing: 0.04em;
+        color: var(--st-text-muted, #888888);
+        transition: background 0.1s;
+        background-color: #333333;
+
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+    }
+
+    .history-window-header-kbd::before {
+        margin-right: 1px;
+        font-weight: 500;
+        opacity: 0.85;
+    }
+
+    .history-window-header-kbd::after {
+        margin-left: 1px;
+        font-weight: 500;
+        opacity: 0.85;
+    }
+
+    .history-window-header--action.selected .history-window-header-kbd {
+        color: var(--st-text-primary, #e8e8e8);
+        border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Align with ListView.svelte list-view-item */
     .history-item {
         display: flex;
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
         width: 100%;
         padding: 8px 10px;
         border-radius: 6px;
         text-align: left;
         cursor: pointer;
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
-        color: var(--st-text-primary, #fff);
-        border: 1px solid transparent;
+        color: #ffffff;
+        background: transparent;
+        border: none;
         box-sizing: border-box;
+        box-shadow: inset 0 0 0 1px transparent;
+        transition:
+            background 0.1s,
+            box-shadow 0.1s;
+    }
+
+    .history-item--section {
+        align-items: center;
+    }
+
+    .history-item--section .history-title {
+        flex: 999 1 0%;
+        min-width: 0;
+    }
+
+    .history-item--section .history-count {
+        flex-shrink: 0;
+    }
+
+    .history-item--section .history-row-spacer {
+        flex: 1 1 0%;
+        min-width: 0;
+    }
+
+    .history-item--section .history-chevron {
+        flex-shrink: 0;
+        font-size: 22px;
+        color: var(--st-text-muted, #777777);
+        font-variation-settings:
+            "FILL" 0,
+            "wght" 500,
+            "GRAD" 0,
+            "opsz" 48;
+    }
+
+    .history-item-icon.material-symbols-rounded {
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 22px;
+        color: var(--st-text-muted, #888888);
+        font-variation-settings:
+            "FILL" 0,
+            "wght" 500,
+            "GRAD" 0,
+            "opsz" 48;
+    }
+
+    .history-item-icon-img {
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        margin: 0;
+        object-fit: contain;
+    }
+
+    .history-item-icon-fallback {
+        flex-shrink: 0;
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        min-height: 24px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--st-text-muted, #808080);
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
+    }
+
+    .history-item.selected .history-item-icon.material-symbols-rounded,
+    .history-item:hover .history-item-icon.material-symbols-rounded {
+        color: var(--st-text-muted, #a0a0a0);
+    }
+
+    .history-count {
+        font-size: 14px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+        color: var(--st-text-muted, #808080);
+    }
+
+    .history-detail-text {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        min-width: 0;
+        flex: 1 1 0%;
+        text-align: left;
+    }
+
+    .history-detail-text .history-title {
+        width: 100%;
     }
 
     .history-item:hover {
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+        background-color: #333333;
     }
 
     .history-item.selected {
-        border-color: var(--st-border-color, rgba(255, 255, 255, 0.25));
+        background-color: #333333;
+    }
+
+    .history-item--placeholder {
+        cursor: default;
+        opacity: 0.9;
+    }
+
+    .history-item--placeholder:hover:not(.selected) {
+        background-color: transparent;
+    }
+
+    .history-item--placeholder.selected {
+        background-color: #2a2a2a;
     }
 
     .history-title {
-        font-size: 13px;
+        font-size: 14px;
         font-weight: 500;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        max-width: 100%;
     }
 
-    .history-sub {
-        font-size: 11px;
+    .history-sub-row {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .history-sub-domain {
+        flex: 1 1 0%;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 400;
         color: var(--st-text-muted, #808080);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: left;
+    }
+
+    .history-sub-time {
+        flex-shrink: 0;
+        font-size: 12px;
+        font-weight: 400;
+        font-variant-numeric: tabular-nums;
+        color: var(--st-text-muted, #808080);
+        text-align: left;
     }
 </style>

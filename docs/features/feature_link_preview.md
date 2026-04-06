@@ -1,7 +1,7 @@
 ## Feature: Link Preview Overlay
 
 **Feature ID:** 101  
-**Status:** Planned  
+**Status:** Planned (vision); **partially superseded in app by [Link Context Menu (9c)](./feature_link_context_menu.md)**  
 **Priority:** Medium
 
 ---
@@ -10,9 +10,11 @@
 
 Renders a preview of a link's webpage in a popup window without leaving the current tab. Similar to Chrome's 2024 link preview feature, this allows users to quickly view linked content and decide whether to open it fully or dismiss it.
 
+**Swift Tabs today:** In-page preview is available as the **Preview** action on the **Link Context Menu** (long-press an http(s) link). That uses an **iframe overlay** in the content script, not a separate Chrome popup window. The table below describes the original product vision; see [feature_link_context_menu.md](./feature_link_context_menu.md) for implemented triggers and behavior.
+
 ---
 
-### Trigger
+### Trigger (vision — not all implemented as standalone gestures)
 
 | Method | Action |
 |--------|--------|

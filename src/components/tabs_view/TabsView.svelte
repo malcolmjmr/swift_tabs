@@ -184,8 +184,12 @@
         historyViewRef?.moveSelection?.(delta);
     }
 
-    export function historyActivateSelection() {
-        return historyViewRef?.activateSelectedRow?.();
+    export async function historyActivateSelection() {
+        await historyViewRef?.activateSelectedRow?.();
+    }
+
+    export function historyGoBack() {
+        return historyViewRef?.goBack?.() ?? false;
     }
 
     export function getNavSlideKind() {
@@ -264,7 +268,6 @@
             <div class="track" bind:this={trackEl} on:scroll={onTrackScroll}>
                 {#if includeEdgeSlides}
                     <section class="slide">
-                        <div class="edge-label">History</div>
                         <HistoryView bind:this={historyViewRef} />
                     </section>
                 {/if}
@@ -371,6 +374,7 @@
         z-index: 999990;
         width: 360px;
         max-width: calc(100vw - 40px);
+        max-height: calc(100vh - 40px);
 
         display: flex;
         flex-direction: column;

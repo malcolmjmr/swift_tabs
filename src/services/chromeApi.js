@@ -132,8 +132,20 @@ export const chromeService = {
         return this.sendMessage('GET_RECENTLY_CLOSED');
     },
 
+    async getSessionsOtherDevices() {
+        const r = await this.sendMessage("GET_SESSIONS_OTHER_DEVICES");
+        if (r && typeof r === "object" && r.error) {
+            throw new Error(r.error);
+        }
+        return Array.isArray(r) ? r : [];
+    },
+
     async restoreSession(sessionId) {
-        return this.sendMessage('RESTORE_SESSION', { sessionId });
+        const r = await this.sendMessage("RESTORE_SESSION", { sessionId });
+        if (r && typeof r === "object" && r.error) {
+            throw new Error(r.error);
+        }
+        return r;
     },
 
     async createEmptyWindow() {

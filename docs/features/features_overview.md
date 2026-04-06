@@ -24,6 +24,7 @@ This document catalogs the features that address the user needs. Each feature is
 | 8 | Tab Reorder with Scroll | Tab Management (Need 3) | Planned | Medium |
 | 9 | Omnibox with Tab Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3), Suggestions & Assistance (Need 13) | Implemented | High |
 | 9b | Omnibox Apps (home, library, detail) | Efficient Tab Navigation (Need 1), Suggestions & Assistance (Need 13) | Implemented | High |
+| 9c | Link Context Menu (http(s) links) | Information Summarization (Need 11), Tab Management (Need 3), Task Management (Need 12) | Implemented | High |
 | 10 | Find in Page | Find in Page (Need 10) | Planned | Medium |
 | 11 | Container Actions Menu | Window and Group Management (Need 4), Tab Management (Need 3) | Planned | High |
 
@@ -110,6 +111,11 @@ Extended Features
 │  ├─ URL/search input
 │  └─ Suggestions [107] — Next steps within current task/activity
 │
+├─ Link Context Menu [9c] (content script)
+│  ├─ Short right-click on http(s) link → background tab (deferred open avoids long-press race)
+│  ├─ Long-press → custom menu: copy, preview, description, tab/window, queue, app save, planner timeframes
+│  └─ Wheel/keyboard selection when pointer outside panel; submenu guarded against stray backdrop click
+│
 ├─ Find in Page [10] ("/" in nav mode when implemented; idle "/" opens shortcuts help today)
 │
 └─ Enhancement Tier (100-series)
@@ -137,6 +143,7 @@ Extended Features
 ### Partially Implemented
 - **Windows Overview**: Basic structure with header (tab/window counts) and footer ([+] [⚙] [←] buttons); vertical scroll to select containers; Space/Enter to navigate; needs tab group integration, group row with Chrome colors, favicon hover titles.
 - **Omnibox**: Implemented. Tabbed sections (Tabs, Groups, Bookmarks, History); horizontal scroll/←→ for sections; vertical ↑↓ for results; **"o"** / **"n"** (including when not in nav mode — enters nav mode first); direct tab/group activation; bookmark/history open in new tab.
+- **Link Context Menu [9c]**: Implemented in the content script. Short secondary-button press on an http(s) link opens a **background tab** (no native context menu). **Long-press** opens a custom panel: copy full/clean URL, Description (LLM), Preview (iframe overlay), new tab/window, link queue, save to current-domain app when registered, planner backlog by timeframe. Header shows **favicon + hostname** (`www.` stripped from display). **Wheel** (pointer outside menu) and **arrows / Space–activate** move and run the selected chip. See [feature_link_context_menu.md](./feature_link_context_menu.md).
 - **Move to New Window**: Enter in navigation mode moves selected tab to the **next** window (`moveSelectedTabToNextWindow`). **Idle Enter** moves the **active** tab to a **new** window. Batch "first Enter creates window, later Enter same window" still TBD.
 - **Tab Menu**: Partially implemented. **"a"** / **"m"** keys, Meta key, Recent section, Basic Actions (Pin, Reload, Duplicate, Copy, Sleep, Find, Close), some Move/Close variants. **Keyboard shortcuts help:** **/** or **?** when idle (`HelpMenu.svelte`). Outstanding: scroll UX, search ranking, Space-to-execute, Move/Save/Appearance/Custom submenus (see feature_tab_context_menu.md § Outstanding Items).
 
@@ -155,7 +162,7 @@ Extended Features
 - **Find in Page [10]**: "/" key to search within current page; "n"/"N" to navigate matches; Esc to close.
 
 **Enhancement Features (100-series):**
-- **Link Preview Overlay [101]**: Right-click or modifier+click on any link → small popup with summary; disappears on scroll or click in tab.
+- **Link Preview Overlay [101]**: Planned overlay vision (modifier+click, etc.). **Shipped path today:** open **Preview** from **Link Context Menu [9c]** (long-press link) — iframe overlay from the menu, not the standalone triggers in the original [feature_link_preview.md](./feature_link_preview.md) table.
 - **Tab Summary Panel [102]**: Floating overlay (with Active Tab Info) showing abstract, table of contents, highlights; triggered via Tab Menu > Summarize.
 - **SERP Link Selector [103]**: Content script adds affordances on Google/DDG for batch link selection; queue view with comparative summary; query expansion suggestions.
 - **Brief Generator [104]**: Morning/evening/weekly digests accessible via Meta+B or scheduled notification; content from saved tasks and flagged bookmarks.
@@ -186,6 +193,7 @@ For full details on each feature, see the individual feature documents:
 
 ### Supporting Features
 - [feature_omnibox.md](./feature_omnibox.md) — Unified search interface with tabbed sections and suggestions
+- [feature_link_context_menu.md](./feature_link_context_menu.md) — Long- / short-press on http(s) links; custom menu, queue, planner, preview
 - [feature_find_in_page.md](./feature_find_in_page.md) — In-page search
 
 ### Enhancement Features (AI-Powered)

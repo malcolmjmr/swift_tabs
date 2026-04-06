@@ -1091,6 +1091,21 @@
             } else if (showActiveTabInfo) {
                 event.preventDefault();
                 hideActiveTabInfo();
+            } else if (
+                isInNavigationMode &&
+                !omniboxIsOpen &&
+                !tabMenuIsOpen &&
+                !helpMenuIsOpen &&
+                !systemMenuIsOpen &&
+                !settingsPageIsOpen &&
+                noModifiersStrict(event) &&
+                (tabsViewRef?.getNavSlideKind?.() ??
+                    navEdgeSlideKind()) === "history"
+            ) {
+                if (tabsViewRef?.historyGoBack?.()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
             }
         } else if (
             isIdleForGlobalTabActions() &&
@@ -1217,6 +1232,22 @@
             navEdgeSlideKind() === "window"
         ) {
             await handleNavModeEnterToNewWindowBatch(event);
+        } else if (
+            isInNavigationMode &&
+            !tabMenuIsOpen &&
+            !omniboxIsOpen &&
+            !helpMenuIsOpen &&
+            !systemMenuIsOpen &&
+            !settingsPageIsOpen &&
+            noModifiersStrict(event) &&
+            !event.repeat &&
+            (event.key === "Backspace" || event.key === "Delete") &&
+            (tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind()) ===
+                "history"
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            tabsViewRef?.historyGoBack?.();
         } else if (
             isInNavigationMode &&
             !tabMenuIsOpen &&
@@ -1674,8 +1705,17 @@
                 return;
             }
 
-            const nk = navEdgeSlideKind();
-            if (nk === "history" || nk === "create") return;
+            const nk = tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
+            if (nk === "history") {
+                scrollSelectDelta += scrollUpdate;
+                if (Math.abs(scrollSelectDelta) >= scrollVerticalThreshold) {
+                    const direction = scrollSelectDelta > 0 ? -1 : 1;
+                    scrollSelectDelta = 0;
+                    tabsViewRef?.historyMoveSelection?.(direction);
+                }
+                return;
+            }
+            if (nk === "create") return;
 
             const win = wl[navSlideIndex - 1];
             if (!win?.tabs?.length) return;

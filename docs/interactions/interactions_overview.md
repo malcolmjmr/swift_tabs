@@ -24,6 +24,7 @@ This document catalogs all user-system interaction flows. Each interaction docum
 | 5 | Windows Overview | Window and Group Management (Need 4) | Planned | Medium |
 | 6 | Omnibox Search | Efficient Tab Navigation (Need 1), Tab Management (Need 3) | In Progress | Medium |
 | 6b | Omnibox Apps section | Efficient Tab Navigation (Need 1) | Implemented | Medium |
+| 6c | Link Context Menu (http(s) links) | Information Summarization (Need 11), Tab Management (Need 3) | Implemented | High |
 | 7 | Find in Page | Find in Page (Need 10) | Planned | Medium |
 | 8 | Container Actions | Window and Group Management (Need 4) | Planned | Medium |
 
@@ -31,7 +32,7 @@ This document catalogs all user-system interaction flows. Each interaction docum
 
 | Interaction ID | Interaction Name | Addresses Need(s) | Status | Priority |
 |----------------|------------------|-------------------|--------|----------|
-| 101 | Link Preview | Information Summarization (Need 11) | Planned | Low |
+| 101 | Link Preview | Information Summarization (Need 11) | Partial (via [Link Context Menu](../features/feature_link_context_menu.md) Preview) | Low |
 | 102 | Focus Mode Toggle | Task Management (Need 12) | Planned | Low |
 | 103 | Workspace Save/Resume | Workspace Management (Need 9) | Planned | Low |
 | 104 | Tab Summary | Information Summarization (Need 11) | Planned | Low |

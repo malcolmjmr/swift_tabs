@@ -98,7 +98,27 @@ function injectContentScript(tabId) {
 
 function onRuntimeMessage(message, sender, sendResponse) {
     if (message.type === "CHROME_API") {
-        chromeApiHandlers[message.endpoint](message.data, sender)
+        const endpoint =
+            typeof message.endpoint === "string"
+                ? message.endpoint.trim()
+                : "";
+        const handler = chromeApiHandlers[endpoint];
+        if (typeof handler !== "function") {
+            console.error(
+                "[Swift Tabs] CHROME_API unknown endpoint:",
+                message.endpoint,
+                "trimmed:",
+                endpoint,
+            );
+            sendResponse({
+                error:
+                    endpoint === ""
+                        ? "CHROME_API missing endpoint"
+                        : `Unknown CHROME_API endpoint: ${endpoint}`,
+            });
+            return true;
+        }
+        handler(message.data, sender)
             .then(sendResponse)
             .catch(error => sendResponse({ error: error.message }));
     } else if (message.type === 'SCROLL') {
@@ -204,6 +224,76 @@ async function getTabsInWindow(windowId) {
     const activeTab = tabs.find(tab => tab.active);
     const activeTabIndex = activeTab ? tabs.indexOf(activeTab) : -1;
     return { tabs, activeTab, activeTabIndex };
+}
+
+/**
+ * Devices with synced sessions, grouped into windows (each Chrome session is one
+ * tab or one window with tabs). HistoryView segments the device drill-in by window.
+ */
+async function apiGetSessionsOtherDevices() {
+    const devices = await chrome.sessions.getDevices();
+    const result = [];
+    for (const d of devices || []) {
+        const deviceName = d.deviceName || "Device";
+        const sessions = d.sessions || [];
+        if (sessions.length === 0) {
+            result.push({
+                deviceName,
+                isPlaceholder: true,
+                windows: [],
+            });
+            continue;
+        }
+        const windows = [];
+        for (let si = 0; si < sessions.length; si++) {
+            const sess = sessions[si];
+            const sid =
+                sess.sessionId != null && sess.sessionId !== ""
+                    ? String(sess.sessionId)
+                    : null;
+            const wkey = `w-${deviceName.replace(/\s+/g, "-")}-${sid ?? `i${si}`}`;
+            if (sess.tab) {
+                const t = sess.tab;
+                const tabSid =
+                    t.sessionId != null && t.sessionId !== ""
+                        ? String(t.sessionId)
+                        : sid;
+                windows.push({
+                    key: wkey,
+                    windowSessionId: sid,
+                    lastModified: sess.lastModified,
+                    tabs: [
+                        {
+                            sessionId: tabSid,
+                            label: t.title || t.url || "Tab",
+                            url: t.url || "",
+                            favIconUrl: t.favIconUrl || "",
+                            lastModified: sess.lastModified,
+                        },
+                    ],
+                });
+            } else if (sess.window) {
+                const wtabs = sess.window.tabs || [];
+                windows.push({
+                    key: wkey,
+                    windowSessionId: sid,
+                    lastModified: sess.lastModified,
+                    tabs: wtabs.map((t) => ({
+                        sessionId:
+                            t.sessionId != null && t.sessionId !== ""
+                                ? String(t.sessionId)
+                                : null,
+                        label: t.title || t.url || "Tab",
+                        url: t.url || "",
+                        favIconUrl: t.favIconUrl || "",
+                        lastModified: sess.lastModified,
+                    })),
+                });
+            }
+        }
+        result.push({ deviceName, windows });
+    }
+    return result;
 }
 
 const chromeApiHandlers = {
@@ -429,6 +519,8 @@ const chromeApiHandlers = {
     async GET_RECENTLY_CLOSED() {
         return chrome.sessions.getRecentlyClosed({ maxResults: 25 });
     },
+
+    GET_SESSIONS_OTHER_DEVICES: apiGetSessionsOtherDevices,
 
     async RESTORE_SESSION({ sessionId }) {
         await chrome.sessions.restore(sessionId);
@@ -708,6 +800,8 @@ const chromeApiHandlers = {
         return win;
     },
 };
+
+chromeApiHandlers.GET_SESSIONS_OTHER_DEVICES = apiGetSessionsOtherDevices;
 
 function extractDomain(url) {
     try {
