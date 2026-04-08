@@ -349,6 +349,13 @@
         trackResizeObserver = null;
     });
 
+    $: totalTabCount = windowsList.reduce(
+        (n, w) => n + sortedTabs(w).length,
+        0,
+    );
+
+    $: showTabsFooter = nWindows > 1 || totalTabCount > 8;
+
     $: listScrollSyncKey =
         viewMode === "list" &&
         kind === "window" &&
@@ -422,7 +429,7 @@
                         class="slide slide--column"
                         data-window-id={win.id}
                     >
-                        {#if windowsList.length > 1 || win.name}
+                        {#if tabs.length > 8 || windowsList.length > 1 || win.name}
                             <div class="group-header">
                                 <div class="group-label">
                                     {win.name || tabs.length + " tabs"}
@@ -476,7 +483,7 @@
                 {/if}
             </div>
         {/if}
-        {#if nWindows > 1}
+        {#if showTabsFooter}
             <div
                 class="tabs-footer"
                 role="toolbar"
@@ -547,6 +554,7 @@
 
         border-radius: 8px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        min-height: 150px;
         font-family:
             system-ui,
             -apple-system,
@@ -566,7 +574,12 @@
         overflow-x: auto;
         overflow-y: hidden;
         scroll-snap-type: x mandatory;
-        scrollbar-width: thin;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .track::-webkit-scrollbar {
+        display: none;
     }
 
     .slide {
