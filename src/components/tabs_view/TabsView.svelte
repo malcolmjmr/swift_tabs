@@ -8,6 +8,9 @@
     import IconView from "./IconView.svelte";
     import ListView from "./ListView.svelte";
     import HistoryView from "./HistoryView.svelte";
+    import CreateNewWindowView from "./CreateNewWindowView.svelte";
+    import historyIcon from "../../icons/history.svg";
+    import addIcon from "../../icons/add.svg";
 
     const dispatch = createEventDispatcher();
 
@@ -39,6 +42,7 @@
     let viewPickerRevealed = false;
 
     let historyViewRef;
+    let createNewWindowViewRef;
 
     $: windowsList = [...(windows || [])]
         .filter((w) => w.tabs?.length > 0)
@@ -84,6 +88,14 @@
         kind === "window"
             ? windowsList[windowIndexFromSlide(slideIndex)]
             : null;
+
+    /** Footer icon highlight when the corresponding edge slide is visible */
+    $: historyFooterActive =
+        includeEdgeSlides &&
+        viewMode !== "overview" &&
+        kind === "history";
+    $: createFooterActive =
+        includeEdgeSlides && viewMode !== "overview" && kind === "create";
 
     $: if (kind === "window" && viewMode !== "overview" && activeWindow) {
         const tabs = [...activeWindow.tabs].sort((a, b) => a.index - b.index);
@@ -191,6 +203,14 @@
 
     export function historyGoBack() {
         return historyViewRef?.goBack?.() ?? false;
+    }
+
+    export function createSlideMoveSelection(delta) {
+        createNewWindowViewRef?.moveSelection?.(delta);
+    }
+
+    export async function createSlideActivateSelection() {
+        await createNewWindowViewRef?.activateSelectedRow?.();
     }
 
     export function getNavSlideKind() {
@@ -349,7 +369,12 @@
 </script>
 
 {#if nWindows > 0}
-    <div class="tabs-view-card">
+    <div
+        class="tabs-view-card"
+        role="region"
+        aria-label="Tabs navigation"
+        on:contextmenu|capture|preventDefault
+    >
         {#if viewMode === "overview"}
             <div class="overview-wrap">
                 {#each windowsList as win, wi (win.id)}
@@ -442,19 +467,10 @@
                 {/each}
                 {#if includeEdgeSlides}
                     <section class="slide slide--column">
-                        <div
-                            class="slide-body-scroll slide-body-scroll--center"
-                        >
-                            <div class="create-slide">
-                                <div class="edge-label">New window</div>
-                                <p class="create-hint">
-                                    Tap <kbd>Space</kbd> to open a new window.
-                                </p>
-                                <p class="create-hint">
-                                    Hold <kbd>Space</kbd> to open a new incognito
-                                    window.
-                                </p>
-                            </div>
+                        <div class="slide-body-scroll">
+                            <CreateNewWindowView
+                                bind:this={createNewWindowViewRef}
+                            />
                         </div>
                     </section>
                 {/if}
@@ -469,10 +485,17 @@
                 <button
                     type="button"
                     class="footer-icon-btn"
+                    class:footer-icon-btn--active={historyFooterActive}
                     aria-label="History"
+                    aria-current={historyFooterActive ? "page" : undefined}
                     on:click={goFooterHistory}
                 >
-                    <span class="material-symbols-rounded">history</span>
+                    <img
+                        src={historyIcon}
+                        alt=""
+                        class="footer-icon-img"
+                        aria-hidden="true"
+                    />
                 </button>
                 <div class="dots" role="tablist" aria-label="Open windows">
                     {#each windowsList as _, i}
@@ -490,10 +513,17 @@
                 <button
                     type="button"
                     class="footer-icon-btn"
+                    class:footer-icon-btn--active={createFooterActive}
                     aria-label="New window"
+                    aria-current={createFooterActive ? "page" : undefined}
                     on:click={goFooterAdd}
                 >
-                    <span class="material-symbols-rounded">add</span>
+                    <img
+                        src={addIcon}
+                        alt=""
+                        class="footer-icon-img"
+                        aria-hidden="true"
+                    />
                 </button>
             </div>
         {/if}
@@ -565,12 +595,6 @@
         scrollbar-width: thin;
     }
 
-    .slide-body-scroll--center {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
     .group-header {
         display: flex;
         flex-direction: row;
@@ -613,38 +637,6 @@
         align-items: center;
         justify-content: center;
         font-size: 16px;
-    }
-
-    .edge-label {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--st-text-muted, #a0a0a0);
-        margin-bottom: 8px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .create-slide {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        height: 100%;
-        width: 100%;
-        gap: 20px;
-    }
-
-    .create-hint {
-        margin: 0;
-        font-size: 13px;
-        color: var(--st-text-muted, #aaa);
-    }
-
-    .create-hint kbd {
-        padding: 2px 6px;
-        border-radius: 4px;
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
     }
 
     .overview-wrap {
@@ -741,13 +733,15 @@
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.14));
     }
 
-    .footer-icon-btn .material-symbols-rounded {
-        font-size: 25px;
-        color: #777;
-        font-variation-settings:
-            "FILL" 1,
-            "wght" 500,
-            "GRAD" 0,
-            "opsz" 48;
+    .footer-icon-btn .footer-icon-img {
+        width: 25px;
+        height: 25px;
+        object-fit: contain;
+        opacity: 0.42;
+    }
+
+    .footer-icon-btn--active .footer-icon-img {
+        opacity: 1;
+        filter: brightness(0) invert(1);
     }
 </style>

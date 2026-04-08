@@ -141,7 +141,7 @@
         if (isInNavigationMode) {
             const nk = tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
             if (nk === "create") {
-                await chromeService.createEmptyWindow();
+                await tabsViewRef?.createSlideActivateSelection?.();
                 await tabStore.refreshState();
                 await fetchTabInfo();
                 isInNavigationMode = false;
@@ -377,11 +377,7 @@
     }
 
     function handleContextMenuCapture(event) {
-        if (
-            linkMenuOpen ||
-            linkPreviewUrl ||
-            linkDescriptionOpen
-        ) {
+        if (linkMenuOpen || linkPreviewUrl || linkDescriptionOpen) {
             event.preventDefault();
             event.stopImmediatePropagation();
             return;
@@ -508,7 +504,10 @@
                 const tabUrl = url;
                 setTimeout(() => {
                     if (linkMenuOpen || linkSuppressNextLinkContext) return;
-                    void chromeService.createTab({ url: tabUrl, active: false });
+                    void chromeService.createTab({
+                        url: tabUrl,
+                        active: false,
+                    });
                 }, LINK_CONTEXT_TAB_DEFER_MS);
             }
             return;
@@ -605,7 +604,7 @@
     }
 
     function handleMouseMove(event) {
-        if (linkRightPressPending && (event.buttons & 2)) {
+        if (linkRightPressPending && event.buttons & 2) {
             const dx = event.clientX - linkRightPressPending.startX;
             const dy = event.clientY - linkRightPressPending.startY;
             if (
@@ -772,8 +771,7 @@
                 linkText: linkMenuText,
             });
         } catch (e) {
-            linkDescriptionError =
-                e?.message || String(e);
+            linkDescriptionError = e?.message || String(e);
         } finally {
             linkDescriptionLoading = false;
         }
@@ -1011,14 +1009,17 @@
             } else if (event.key === "f" || event.key === "F") {
             } else if (event.key === "x" || event.key === "X") {
                 (async () => {
+                    const selectedTabIndex = selectedTab.index;
                     await tabStore.closeTab(selectedTab.id);
                     await tabStore.refreshState();
-                    // set selectedTab to tab with next highest index
+                    // set selectedTab to tab with next highest index in the same window
                     const tabs = [...window.tabs].sort(
                         (a, b) => a.index - b.index,
                     );
                     selectedTab =
-                        tabs.find((t) => t.active) ?? tabs[0] ?? selectedTab;
+                        tabs.find((t) => t.index > selectedTabIndex) ??
+                        tabs[0] ??
+                        selectedTab;
                 })();
             }
         } else if (event.key === " ") {
@@ -1046,6 +1047,14 @@
             spaceArm = true;
             spaceLongPressFired = false;
             clearSpaceLongPressTimer();
+            if (
+                isInNavigationMode &&
+                noModifiersStrict(event) &&
+                (tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind()) ===
+                    "create"
+            ) {
+                return;
+            }
             spaceLongPressTimer = setTimeout(() => {
                 spaceLongPressTimer = null;
                 if (
@@ -1099,8 +1108,8 @@
                 !systemMenuIsOpen &&
                 !settingsPageIsOpen &&
                 noModifiersStrict(event) &&
-                (tabsViewRef?.getNavSlideKind?.() ??
-                    navEdgeSlideKind()) === "history"
+                (tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind()) ===
+                    "history"
             ) {
                 if (tabsViewRef?.historyGoBack?.()) {
                     event.preventDefault();
@@ -1325,6 +1334,11 @@
                 return;
             }
             if (nk === "create") {
+                if (event.key === "ArrowUp") {
+                    tabsViewRef?.createSlideMoveSelection?.(-1);
+                } else if (event.key === "ArrowDown") {
+                    tabsViewRef?.createSlideMoveSelection?.(1);
+                }
                 return;
             }
 
@@ -1715,7 +1729,15 @@
                 }
                 return;
             }
-            if (nk === "create") return;
+            if (nk === "create") {
+                scrollSelectDelta += scrollUpdate;
+                if (Math.abs(scrollSelectDelta) >= scrollVerticalThreshold) {
+                    const direction = scrollSelectDelta > 0 ? -1 : 1;
+                    scrollSelectDelta = 0;
+                    tabsViewRef?.createSlideMoveSelection?.(direction);
+                }
+                return;
+            }
 
             const win = wl[navSlideIndex - 1];
             if (!win?.tabs?.length) return;

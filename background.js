@@ -534,6 +534,26 @@ const chromeApiHandlers = {
         return w;
     },
 
+    async CREATE_EMPTY_INCOGNITO_WINDOW() {
+        const w = await chrome.windows.create({
+            focused: false,
+            url: "about:blank",
+            incognito: true,
+        });
+        broadcastTabsDataChanged();
+        return w;
+    },
+
+    async CREATE_EMPTY_POPUP_WINDOW() {
+        const w = await chrome.windows.create({
+            focused: false,
+            url: "about:blank",
+            type: "popup",
+        });
+        broadcastTabsDataChanged();
+        return w;
+    },
+
     async ACTIVATE_TAB_GROUP({ groupId, windowId }) {
         const tabs = await chrome.tabs.query({ windowId });
         const inGroup = tabs.filter((t) => t.groupId === groupId);

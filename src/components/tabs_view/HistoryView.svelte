@@ -5,6 +5,10 @@
      */
     import { onMount, tick, onDestroy } from "svelte";
     import { chromeService } from "../../services/chromeApi";
+    import historyIcon from "../../icons/history.svg";
+    import folderIcon from "../../icons/folder.svg";
+    import devicesIcon from "../../icons/devices.svg";
+    import chevronRightIcon from "../../icons/chevron-right.svg";
 
     /** Currently highlighted row key (for keyboard + Space) */
     export let selectedRowKey = null;
@@ -35,6 +39,21 @@
         saved: "root-saved",
         devices: "root-devices",
     };
+
+    /** Material-style row icon glyph name → bundled SVG (root sections, saved folders). */
+    function sectionRowIconSrc(rowIcon) {
+        switch (rowIcon) {
+            case "history":
+                return historyIcon;
+            case "folder_special":
+            case "folder":
+                return folderIcon;
+            case "devices":
+                return devicesIcon;
+            default:
+                return historyIcon;
+        }
+    }
 
     function labelRecentlyClosedSession(s) {
         if (s.tab) {
@@ -617,18 +636,22 @@
                             data-history-row-key={row.key}
                             on:click={() => onRowClick(row)}
                         >
-                            <span
-                                class="history-item-icon material-symbols-rounded"
-                                aria-hidden="true">{row.rowIcon}</span
-                            >
+                            <img
+                                src={sectionRowIconSrc(row.rowIcon)}
+                                alt=""
+                                class="history-item-icon history-item-icon-svg"
+                                aria-hidden="true"
+                            />
                             <span class="history-title">{row.label}</span>
                             <span class="history-count">{row.count}</span>
                             <span class="history-row-spacer" aria-hidden="true"
                             ></span>
-                            <span
-                                class="history-chevron material-symbols-rounded"
-                                aria-hidden="true">chevron_right</span
-                            >
+                            <img
+                                src={chevronRightIcon}
+                                alt=""
+                                class="history-chevron history-chevron-svg"
+                                aria-hidden="true"
+                            />
                         </button>
                     {:else if historyPane === "deviceTabs"}
                         {#if row.isWindowHeader}
@@ -739,10 +762,12 @@
                                     >
                                 {/if}
                             {:else}
-                                <span
-                                    class="history-item-icon material-symbols-rounded"
-                                    aria-hidden="true">{row.rowIcon}</span
-                                >
+                                <img
+                                    src={sectionRowIconSrc(row.rowIcon)}
+                                    alt=""
+                                    class="history-item-icon history-item-icon-svg"
+                                    aria-hidden="true"
+                                />
                             {/if}
                             <div class="history-detail-text">
                                 <span class="history-title">{row.label}</span>
@@ -1060,31 +1085,20 @@
         min-width: 0;
     }
 
-    .history-item--section .history-chevron {
+    .history-item--section .history-chevron-svg {
         flex-shrink: 0;
-        font-size: 22px;
-        color: var(--st-text-muted, #777777);
-        font-variation-settings:
-            "FILL" 0,
-            "wght" 500,
-            "GRAD" 0,
-            "opsz" 48;
+        width: 22px;
+        height: 22px;
+        object-fit: contain;
+        opacity: 0.45;
     }
 
-    .history-item-icon.material-symbols-rounded {
+    .history-item-icon.history-item-icon-svg {
         flex-shrink: 0;
         width: 24px;
         height: 24px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 22px;
-        color: var(--st-text-muted, #888888);
-        font-variation-settings:
-            "FILL" 0,
-            "wght" 500,
-            "GRAD" 0,
-            "opsz" 48;
+        object-fit: contain;
+        opacity: 0.55;
     }
 
     .history-item-icon-img {
@@ -1112,9 +1126,9 @@
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
     }
 
-    .history-item.selected .history-item-icon.material-symbols-rounded,
-    .history-item:hover .history-item-icon.material-symbols-rounded {
-        color: var(--st-text-muted, #a0a0a0);
+    .history-item.selected .history-item-icon.history-item-icon-svg,
+    .history-item:hover .history-item-icon.history-item-icon-svg {
+        opacity: 0.72;
     }
 
     .history-count {

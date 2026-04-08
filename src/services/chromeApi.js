@@ -152,6 +152,14 @@ export const chromeService = {
         return this.sendMessage('CREATE_EMPTY_WINDOW');
     },
 
+    async createEmptyIncognitoWindow() {
+        return this.sendMessage("CREATE_EMPTY_INCOGNITO_WINDOW");
+    },
+
+    async createEmptyPopupWindow() {
+        return this.sendMessage("CREATE_EMPTY_POPUP_WINDOW");
+    },
+
     async activateTabGroup(groupId, windowId) {
         return this.sendMessage('ACTIVATE_TAB_GROUP', { groupId, windowId });
     },
