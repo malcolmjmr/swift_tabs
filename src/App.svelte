@@ -208,7 +208,9 @@
                 await tabStore.refreshState();
                 await fetchTabInfo();
             } else if (selectedTab) {
-                chromeService.activateTab(selectedTab.id);
+                await chromeService.activateTab(selectedTab.id);
+                await tabStore.refreshState();
+                await fetchTabInfo();
                 isInNavigationMode = false;
                 navigationEnteredFromTyping = false;
                 resetTriageGestureState();
@@ -1108,15 +1110,18 @@
 
     async function onNavActivateTab(/** @type {chrome.tabs.Tab} */ tab) {
         await chromeService.activateTab(tab.id);
+        await tabStore.refreshState();
+        await fetchTabInfo();
         navigationEnteredFromTyping = false;
         resetTriageGestureState();
+        isInNavigationMode = false;
         chrome.runtime.sendMessage({
             type: "TRIAGE_MODE",
             isInTriageMode: false,
         });
         chrome.runtime.sendMessage({
             type: "NAVIGATION_MODE",
-            isInNavigationMode: false,
+            isInNavigationMode,
         });
     }
 

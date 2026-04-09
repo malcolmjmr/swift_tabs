@@ -1,0 +1,70 @@
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+}
+
+body.swift-tabs-demo {
+    background: #111;
+    color: #c4c8d0;
+    font-family:
+        system-ui,
+        -apple-system,
+        "Segoe UI",
+        Roboto,
+        sans-serif;
+}
+
+.demo-page {
+    box-sizing: border-box;
+    height: calc(100vh - 150px);
+    padding: 28px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.demo-page__title {
+    margin: 0 0 0 10px;
+    font-size: clamp(1.25rem, 2.5vw, 1.5rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: #e6e8ee;
+    text-align: left;
+}
+
+.demo-browser-viewport {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+    overflow: hidden;
+}
+
+.demo-browser {
+    flex-grow: 1;
+    min-height: 100%;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #0e1014;
+    box-shadow:
+        0 4px 6px rgba(0, 0, 0, 0.35),
+        0 24px 48px rgba(0, 0, 0, 0.45);
+    transform: translateZ(0);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.demo-browser #swift-tabs-root {
+    flex: 1 1 auto;
+    min-height: 0;
+    position: relative;
+    z-index: 2147483647;
+}
+
+.demo-page__instructions {
+    flex: 0 0 auto;
+    margin-left: 10px;
+}

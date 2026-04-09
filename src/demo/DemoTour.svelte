@@ -213,55 +213,29 @@
 </script>
 
 <div class="demo-tour" aria-live="polite">
-    <div class="demo-tour__panel">
-        {#if phase < 8}
-            <p class="demo-tour__line">{instruction}</p>
-        {/if}
-        <div class="demo-tour__extras">
-            <button type="button" class="demo-tour__linkish" on:click={restartDemo}>
-                Reset demo
-            </button>
-            <span class="demo-tour__sep">·</span>
-            <button type="button" class="demo-tour__linkish" on:click={fullReload}>
-                Reload page
-            </button>
-        </div>
+    {#if phase < 8}
+        <p class="demo-tour__line">{instruction}</p>
+    {/if}
+    <div class="demo-tour__extras">
+        <button type="button" class="demo-tour__linkish" on:click={restartDemo}>
+            Reset demo
+        </button>
+        <span class="demo-tour__sep">·</span>
+        <button type="button" class="demo-tour__linkish" on:click={fullReload}>
+            Reload page
+        </button>
     </div>
 </div>
 
 <style>
     .demo-tour {
-        position: fixed;
-        z-index: 2147483646;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        pointer-events: none;
-        display: flex;
-        justify-content: center;
-        padding: 12px 16px 20px;
-        box-sizing: border-box;
-    }
-
-    .demo-tour__panel {
-        pointer-events: auto;
-        max-width: min(440px, 100%);
-        background: rgba(24, 28, 36, 0.96);
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        border-radius: 10px;
-        padding: 14px 18px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
-        color: #e8eaef;
-        font-family:
-            system-ui,
-            -apple-system,
-            sans-serif;
         font-size: 15px;
-        line-height: 1.4;
+        line-height: 1.5;
+        color: #aeb4c0;
     }
 
     .demo-tour__line {
-        margin: 0 0 12px;
+        margin: 0 0 10px;
     }
 
     .demo-tour__extras {
@@ -269,21 +243,21 @@
         flex-wrap: wrap;
         align-items: center;
         gap: 6px;
-        font-size: 12px;
-        opacity: 0.85;
+        font-size: 13px;
+        color: #8b92a0;
     }
 
     .demo-tour__linkish {
         background: none;
         border: none;
         padding: 0;
-        color: #9db7ff;
+        color: #8fa8e8;
         text-decoration: underline;
         cursor: pointer;
         font-size: inherit;
     }
 
     .demo-tour__sep {
-        opacity: 0.5;
+        opacity: 0.55;
     }
 </style>
