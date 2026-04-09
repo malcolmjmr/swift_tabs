@@ -99,3 +99,33 @@ export function tabToSelectAfterClose(tabsSortedByIndex, closedTabIndex) {
         tabsSortedByIndex[closedTabIndex - 1]
     );
 }
+
+/**
+ * Tabs to close or move in nav/triage: persistent multi-select in the same
+ * window as the keyboard highlight, or the highlighted tab alone.
+ * @param {chrome.tabs.Tab[]} tabsSortedInWindow
+ * @param {chrome.tabs.Tab | null | undefined} selectedTab
+ * @param {Iterable<number>} persistentTabIds
+ * @returns {chrome.tabs.Tab[]}
+ */
+export function targetTabsForNavBatch(
+    tabsSortedInWindow,
+    selectedTab,
+    persistentTabIds,
+) {
+    if (!selectedTab) return [];
+    const windowId = selectedTab.windowId;
+    const fromPersistent = [...persistentTabIds]
+        .map((id) =>
+            tabsSortedInWindow.find(
+                (t) => t.id === id && t.windowId === windowId,
+            ),
+        )
+        .filter(Boolean)
+        .sort((a, b) => a.index - b.index);
+    if (fromPersistent.length > 0) return fromPersistent;
+    const one = tabsSortedInWindow.find(
+        (t) => t.id === selectedTab.id && t.windowId === windowId,
+    );
+    return one ? [one] : [];
+}

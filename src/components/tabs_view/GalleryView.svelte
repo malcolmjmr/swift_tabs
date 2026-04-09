@@ -35,7 +35,8 @@
                 class="gallery-view-item"
                 role="button"
                 tabindex="0"
-                class:selected={selectedTab != null && tab.id === selectedTab.id}
+                class:selected={selectedTab != null &&
+                    tab.id === selectedTab.id}
                 class:multi-selected={multiSelectedIds.includes(tab.id)}
                 class:active={tab.active === true}
                 class:last-active={lastActiveId != null &&

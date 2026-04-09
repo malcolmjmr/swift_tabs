@@ -1,5 +1,8 @@
 import { noModifiersStrict } from "../domUtils.js";
-import { tabToSelectAfterClose } from "../navWindowModel.js";
+import {
+    tabToSelectAfterClose,
+    targetTabsForNavBatch,
+} from "../navWindowModel.js";
 
 /**
  * @param {KeyboardEvent} event
@@ -35,6 +38,8 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         getShowActiveTabInfo,
         getIsInTriageMode,
         sendTriageMode,
+        getPersistentTabSelection,
+        setPersistentTabSelection,
     } = ctx;
 
     if (
@@ -62,20 +67,41 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         } else if (event.key === "x" || event.key === "X") {
             const selectedTab = getSelectedTab();
             if (!selectedTab) return true;
-            const selectedTabIndex = selectedTab.index;
-            await tabStore.closeTab(selectedTab.id);
-            await tabStore.refreshState();
+            const wid = selectedTab.windowId;
             const windowsList = [...getWindowsList()]
                 .filter((w) => w.tabs.length > 0)
                 .sort((a, b) => a.id - b.id);
-            const chromeWindow = windowsList.find(
-                (w) => w.id === selectedTab.windowId,
-            );
-            const tabs = chromeWindow?.tabs?.length
+            const chromeWindow = windowsList.find((w) => w.id === wid);
+            const tabsSorted = chromeWindow?.tabs?.length
                 ? [...chromeWindow.tabs].sort((a, b) => a.index - b.index)
                 : [];
+            const persistentTabSelection = getPersistentTabSelection?.() ?? new Set();
+            const toClose = targetTabsForNavBatch(
+                tabsSorted,
+                selectedTab,
+                persistentTabSelection,
+            );
+            if (toClose.length === 0) return true;
+            const minClosedIndex = Math.min(...toClose.map((t) => t.index));
+            const closeIds = new Set(toClose.map((t) => t.id));
+            for (const t of [...toClose].sort((a, b) => b.index - a.index)) {
+                await tabStore.closeTab(t.id);
+            }
+            await tabStore.refreshState();
+            if (setPersistentTabSelection) {
+                const nextSel = new Set(persistentTabSelection);
+                for (const id of closeIds) nextSel.delete(id);
+                setPersistentTabSelection(nextSel);
+            }
+            const winAfter = [...getWindowsList()]
+                .filter((w) => w.tabs?.length > 0)
+                .sort((a, b) => a.id - b.id)
+                .find((w) => w.id === wid);
+            const tabsAfter = winAfter?.tabs?.length
+                ? [...winAfter.tabs].sort((a, b) => a.index - b.index)
+                : [];
             setSelectedTab(
-                tabToSelectAfterClose(tabs, selectedTabIndex) ?? selectedTab,
+                tabToSelectAfterClose(tabsAfter, minClosedIndex) ?? selectedTab,
             );
         }
         return true;
@@ -169,7 +195,7 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
             !settingsPageIsOpen &&
             noModifiersStrict(event) &&
             (getTabsViewRef()?.getNavSlideKind?.() ?? navEdgeSlideKind()) ===
-                "history"
+            "history"
         ) {
             if (getTabsViewRef()?.historyGoBack?.()) {
                 event.preventDefault();

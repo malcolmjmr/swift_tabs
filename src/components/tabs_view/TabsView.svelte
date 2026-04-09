@@ -91,9 +91,7 @@
 
     /** Footer icon highlight when the corresponding edge slide is visible */
     $: historyFooterActive =
-        includeEdgeSlides &&
-        viewMode !== "overview" &&
-        kind === "history";
+        includeEdgeSlides && viewMode !== "overview" && kind === "history";
     $: createFooterActive =
         includeEdgeSlides && viewMode !== "overview" && kind === "create";
 

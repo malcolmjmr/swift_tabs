@@ -35,7 +35,8 @@
                 class:active={tab.active === true}
                 class:last-active={lastActiveId != null &&
                     tab.id === lastActiveId}
-                class:selected={selectedTab != null && tab.id === selectedTab.id}
+                class:selected={selectedTab != null &&
+                    tab.id === selectedTab.id}
                 class:multi-selected={multiSelectedIds.includes(tab.id)}
                 data-st-extension-current-tab={currentTab != null &&
                 tab.id === currentTab.id

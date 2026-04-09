@@ -1,3 +1,6 @@
+import { targetTabsForNavBatch } from "../navWindowModel.js";
+import { applyVerticalMoveForSelection } from "./moveModeVerticalBatch.js";
+
 /**
  * Move mode: vertical delta → reorder tab; horizontal → adjacent window.
  * @param {number} deltaX
@@ -7,6 +10,8 @@
 export function applyMoveModeDeltas(deltaX, deltaY, ctx) {
     const {
         getSelectedTab,
+        getPersistentTabSelection,
+        getCurrentNavWindowTabsSorted,
         navEdgeSlideKind,
         scrollVerticalThreshold,
         scrollHorizontalThreshold,
@@ -29,7 +34,19 @@ export function applyMoveModeDeltas(deltaX, deltaY, ctx) {
         ) {
             const dir = moveModeVerticalAccumRef.value > 0 ? 1 : -1;
             moveModeVerticalAccumRef.value = 0;
-            void tabStore.moveTabWithinWindow(selectedTab.id, dir);
+            const tabsSorted = getCurrentNavWindowTabsSorted?.() ?? [];
+            const persistent = getPersistentTabSelection?.() ?? new Set();
+            const batch = targetTabsForNavBatch(
+                tabsSorted,
+                selectedTab,
+                persistent,
+            );
+            void applyVerticalMoveForSelection(
+                tabStore,
+                tabsSorted,
+                batch,
+                dir,
+            );
         }
     } else {
         moveModeHorizontalAccumRef.value += deltaX;

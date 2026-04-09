@@ -12,7 +12,11 @@
     import { recentActionsStore } from "./stores/recentActionsStore";
     import LinkMenuHost from "./components/app/LinkMenuHost.svelte";
     import AppOverlays from "./components/app/AppOverlays.svelte";
-    import { SETTINGS_DEFAULTS, mergeStoredSettings, persistSettings } from "./app/settingsStorage.js";
+    import {
+        SETTINGS_DEFAULTS,
+        mergeStoredSettings,
+        persistSettings,
+    } from "./app/settingsStorage.js";
     import { isHttpLinkFromEventTarget } from "./app/linkDom.js";
     import {
         TAB_SWITCHING_DISMISS_MS,
@@ -27,6 +31,7 @@
         syncNavSlideToWindowId as indicesForWindowFocus,
         currentNavWindow as currentNavWindowFromState,
         tabToSelectAfterClose,
+        targetTabsForNavBatch,
     } from "./app/navWindowModel.js";
     import { pickMoveTargetWindow } from "./app/triage/pickMoveTargetWindow.js";
     import { clearTriageWheelIdleTimer } from "./app/gestures/triageScroll.js";
@@ -186,8 +191,7 @@
 
     async function handleSpaceShortPress() {
         if (isInNavigationMode) {
-            const nk =
-                tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
+            const nk = tabsViewRef?.getNavSlideKind?.() ?? navEdgeSlideKind();
             if (nk === "create") {
                 await tabsViewRef?.createSlideActivateSelection?.();
                 await tabStore.refreshState();
@@ -246,11 +250,7 @@
     }
 
     function syncNavSlideToWindowId(windowId) {
-        const u = indicesForWindowFocus(
-            get(windows),
-            windowId,
-            navViewMode,
-        );
+        const u = indicesForWindowFocus(get(windows), windowId, navViewMode);
         if (!u) return;
         if (u.navSlideIndex != null) navSlideIndex = u.navSlideIndex;
         if (u.overviewFocusedWindowIndex != null) {
@@ -355,10 +355,7 @@
         const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
         const idx = tabs.findIndex((t) => t.id === currentTab?.id);
         if (idx < 0) return;
-        const nextIdx = Math.max(
-            0,
-            Math.min(tabs.length - 1, idx + direction),
-        );
+        const nextIdx = Math.max(0, Math.min(tabs.length - 1, idx + direction));
         if (nextIdx === idx) return;
         await chromeService.activateTab(tabs[nextIdx].id);
         await tabStore.refreshState();
@@ -401,10 +398,7 @@
             tab.id,
             NEW_WINDOW_CONTEXT_TIMEOUT_MS,
         );
-        if (
-            !target.createNew &&
-            target.windowId === tab.windowId
-        ) {
+        if (!target.createNew && target.windowId === tab.windowId) {
             target = { createNew: true };
         }
 
@@ -738,9 +732,23 @@
         }
         if (navEdgeSlideKind() !== "window" || !selectedTab) return;
 
-        const tabIdBeingMoved = selectedTab.id;
+        await tabStore.refreshState();
+        const winNav = currentNavWindow();
+        if (!winNav?.tabs?.length) return;
+        const wlState = get(windows);
+        const winFresh = wlState.find((w) => w.id === winNav.id);
+        if (!winFresh?.tabs?.length) return;
+        const tabsSorted = [...winFresh.tabs].sort((a, b) => a.index - b.index);
+        const batch = targetTabsForNavBatch(
+            tabsSorted,
+            selectedTab,
+            persistentTabSelection,
+        );
+        if (batch.length === 0) return;
+        const tabIdsAscending = batch.map((t) => t.id);
+
         const windowsList = sortedOpenWindows();
-        const currentWindowId = selectedTab.windowId;
+        const currentWindowId = winFresh.id;
         const currentWindowIndex = windowsList.findIndex(
             (w) => w.id === currentWindowId,
         );
@@ -754,15 +762,19 @@
 
         try {
             if (goingNext && currentWindowIndex >= windowsList.length - 1) {
-                await chromeService.createWindowWithTab(tabIdBeingMoved, {
+                await chromeService.createWindowWithTabs(tabIdsAscending, {
                     focused: false,
                 });
             } else if (goingNext) {
                 const targetWindowId = windowsList[currentWindowIndex + 1].id;
-                await tabStore.moveTab(tabIdBeingMoved, targetWindowId);
+                for (const id of tabIdsAscending) {
+                    await tabStore.moveTab(id, targetWindowId);
+                }
             } else {
                 const targetWindowId = windowsList[currentWindowIndex - 1].id;
-                await tabStore.moveTab(tabIdBeingMoved, targetWindowId);
+                for (const id of tabIdsAscending) {
+                    await tabStore.moveTab(id, targetWindowId);
+                }
             }
         } catch (e) {
             console.error(e);
@@ -773,7 +785,8 @@
 
         moveModeHadCrossWindowMove = true;
 
-        const movedTab = findTabById(tabIdBeingMoved);
+        const anchorId = tabIdsAscending[0];
+        const movedTab = findTabById(anchorId);
         if (movedTab) {
             selectedTab = movedTab;
             syncNavSlideToWindowId(movedTab.windowId);
@@ -796,17 +809,11 @@
         const tabsSorted = [...winFresh.tabs].sort((a, b) => a.index - b.index);
         const sourceWindowId = winFresh.id;
 
-        let targetTabs = [];
-        if (persistentTabSelection.size > 0) {
-            targetTabs = [...persistentTabSelection]
-                .map((id) => tabsSorted.find((t) => t.id === id))
-                .filter(Boolean)
-                .sort((a, b) => a.index - b.index);
-        }
-        if (targetTabs.length === 0) {
-            const t = tabsSorted.find((x) => x.id === selectedTab.id);
-            if (t) targetTabs = [t];
-        }
+        const targetTabs = targetTabsForNavBatch(
+            tabsSorted,
+            selectedTab,
+            persistentTabSelection,
+        );
         if (targetTabs.length === 0) return;
 
         const targetIds = targetTabs.map((t) => t.id);
@@ -905,6 +912,12 @@
             },
             tabStore,
             moveSelectedTabAdjacentWindow,
+            getPersistentTabSelection: () => persistentTabSelection,
+            getCurrentNavWindowTabsSorted: () => {
+                const w = currentNavWindow();
+                if (!w?.tabs?.length) return [];
+                return [...w.tabs].sort((a, b) => a.index - b.index);
+            },
             togglePersistentTabSelection,
             getIsInTriageMode: () => isInTriageMode,
             getTriageHorizontalPx: () => triageHorizontalPx,
@@ -1108,10 +1121,9 @@
     }
 
     $: activeInfoTab = isInTriageMode
-        ? currentTab ?? selectedTab
+        ? (currentTab ?? selectedTab)
         : isInNavigationMode
-          ? navEdgeSlideKind() === "history" ||
-              navEdgeSlideKind() === "create"
+          ? navEdgeSlideKind() === "history" || navEdgeSlideKind() === "create"
               ? null
               : selectedTab
           : currentTab;
@@ -1132,8 +1144,7 @@
     );
     $: triageCanScrollUp = triageActiveIndex > 0;
     $: triageCanScrollDown =
-        triageActiveIndex >= 0 &&
-        triageActiveIndex < triageTabList.length - 1;
+        triageActiveIndex >= 0 && triageActiveIndex < triageTabList.length - 1;
     $: showActiveInfoLayer =
         (showActiveTabInfo || tabMenuIsOpen) &&
         activeInfoTab &&
@@ -1185,7 +1196,7 @@
 
 <LinkMenuHost
     bind:this={linkMenuHostRef}
-    longPressThreshold={longPressThreshold}
+    {longPressThreshold}
     copyImageWithMetaKey={settings.copyImageWithMetaKey}
     {tabMenuIsOpen}
     {helpMenuIsOpen}
@@ -1194,7 +1205,7 @@
 />
 
 <AppOverlays
-    onNavActivateTab={onNavActivateTab}
+    {onNavActivateTab}
     bind:tabMenuIsOpen
     bind:helpMenuIsOpen
     bind:settingsPageIsOpen
@@ -1213,15 +1224,15 @@
     bind:omniboxQuery
     activeTabId={$activeTabId}
     {settings}
-    saveSettingsPatch={saveSettingsPatch}
+    {saveSettingsPatch}
     {isInTabSwitchingMode}
     currentWindowTabs={$currentWindowTabs}
     {showActiveInfoLayer}
-    activeInfoTab={activeInfoTab}
+    {activeInfoTab}
     {isInTriageMode}
-    triageHorizontalPx={triageHorizontalPx}
-    triageCanScrollUp={triageCanScrollUp}
-    triageCanScrollDown={triageCanScrollDown}
+    {triageHorizontalPx}
+    {triageCanScrollUp}
+    {triageCanScrollDown}
     onTriagePointerGestureStart={handleTriagePointerGestureStart}
 />
 

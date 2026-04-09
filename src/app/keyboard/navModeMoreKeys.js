@@ -2,6 +2,7 @@ import { noModifiersStrict } from "../domUtils.js";
 import {
     sortedOpenWindows,
     tabToSelectAfterClose,
+    targetTabsForNavBatch,
 } from "../navWindowModel.js";
 
 /**
@@ -55,22 +56,29 @@ export async function tryNavModeMoreKeys(event, ctx) {
         event.stopPropagation();
         const selectedTab = getSelectedTab();
         if (!selectedTab) return true;
-        const closedId = selectedTab.id;
-        const closedTabIndex = selectedTab.index;
         const closedWindowId = selectedTab.windowId;
         const windowsList = [...getWindowsList()]
             .filter((w) => w.tabs.length > 0)
             .sort((a, b) => a.id - b.id);
         const win = windowsList.find((w) => w.id === closedWindowId);
         if (!win?.tabs?.length) return true;
-        await tabStore.closeTab(selectedTab.id);
-        await tabStore.refreshState();
+        const tabsSorted = [...win.tabs].sort((a, b) => a.index - b.index);
         const persistentTabSelection = getPersistentTabSelection();
-        if (persistentTabSelection.has(closedId)) {
-            const next = new Set(persistentTabSelection);
-            next.delete(closedId);
-            setPersistentTabSelection(next);
+        const toClose = targetTabsForNavBatch(
+            tabsSorted,
+            selectedTab,
+            persistentTabSelection,
+        );
+        if (toClose.length === 0) return true;
+        const minClosedIndex = Math.min(...toClose.map((t) => t.index));
+        const closeIds = new Set(toClose.map((t) => t.id));
+        for (const t of [...toClose].sort((a, b) => b.index - a.index)) {
+            await tabStore.closeTab(t.id);
         }
+        await tabStore.refreshState();
+        const nextSel = new Set(persistentTabSelection);
+        for (const id of closeIds) nextSel.delete(id);
+        setPersistentTabSelection(nextSel);
         const winAfter = [...getWindowsList()]
             .filter((w) => w.tabs?.length > 0)
             .sort((a, b) => a.id - b.id)
@@ -78,7 +86,7 @@ export async function tryNavModeMoreKeys(event, ctx) {
         const tabsAfter = winAfter?.tabs?.length
             ? [...winAfter.tabs].sort((a, b) => a.index - b.index)
             : [];
-        setSelectedTab(tabToSelectAfterClose(tabsAfter, closedTabIndex));
+        setSelectedTab(tabToSelectAfterClose(tabsAfter, minClosedIndex));
         return true;
     }
 
@@ -125,7 +133,7 @@ export async function tryNavModeMoreKeys(event, ctx) {
         !event.repeat &&
         (event.key === "Backspace" || event.key === "Delete") &&
         (getTabsViewRef()?.getNavSlideKind?.() ?? navEdgeSlideKind()) ===
-            "history"
+        "history"
     ) {
         event.preventDefault();
         event.stopPropagation();
