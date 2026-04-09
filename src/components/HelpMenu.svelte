@@ -39,7 +39,6 @@
         <section>
             <h3>Omnibox</h3>
             <ul>
-                <li><kbd>Space</kbd> (hold) — Toggle triage mode (enters navigation mode when turning triage on, if needed); hold again to turn triage off</li>
                 <li><kbd>n</kbd> — Open omnibox (enters navigation mode if needed)</li>
                 <li>In navigation mode, type any character — Search tabs</li>
             </ul>

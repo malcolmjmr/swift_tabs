@@ -34,16 +34,22 @@ export async function tryNavModeMoreKeys(event, ctx) {
         getNavViewMode,
         getOverviewFocusedWindowIndex,
         setOverviewFocusedWindowIndex,
+        getIsInTriageMode,
     } = ctx;
+
+    const inTriage = getIsInTriageMode?.() === true;
+    const inNavOrTriage = isInNavigationMode || inTriage;
+    const windowSlideOrTriage =
+        navEdgeSlideKind() === "window" || inTriage;
 
     const wl = () =>
         sortedOpenWindowsFn ? sortedOpenWindowsFn() : sortedOpenWindows(getWindowsList());
 
     if (
         (event.key === "Delete" || event.key === "Backspace") &&
-        isInNavigationMode &&
+        inNavOrTriage &&
         getSelectedTab() &&
-        navEdgeSlideKind() === "window"
+        windowSlideOrTriage
     ) {
         event.preventDefault();
         event.stopPropagation();
@@ -77,14 +83,14 @@ export async function tryNavModeMoreKeys(event, ctx) {
     }
 
     if (
-        isInNavigationMode &&
+        inNavOrTriage &&
         !omniboxIsOpen &&
         !tabMenuIsOpen &&
         !helpMenuIsOpen &&
         !systemMenuIsOpen &&
         !settingsPageIsOpen &&
         getSelectedTab() &&
-        navEdgeSlideKind() === "window" &&
+        windowSlideOrTriage &&
         !event.ctrlKey &&
         !event.altKey &&
         !event.metaKey &&
@@ -100,9 +106,9 @@ export async function tryNavModeMoreKeys(event, ctx) {
 
     if (
         event.key === "Enter" &&
-        isInNavigationMode &&
+        inNavOrTriage &&
         getSelectedTab() &&
-        navEdgeSlideKind() === "window"
+        windowSlideOrTriage
     ) {
         await handleNavModeEnterToNewWindowBatch(event);
         return true;

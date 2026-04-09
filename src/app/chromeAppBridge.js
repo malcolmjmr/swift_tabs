@@ -1,6 +1,7 @@
 /**
  * @param {{
  *   onNavigationMode?: (message: { type: string, isInNavigationMode?: boolean }) => void;
+ *   onTriageMode?: (message: { type: string, isInTriageMode?: boolean }) => void;
  *   onTabSwitchingMode?: (message: unknown) => void;
  *   onTabsDataChanged?: () => void;
  *   onTabUpdated?: (message: { tabId?: number }) => void;
@@ -16,6 +17,12 @@ export function subscribeChromeAppMessages(handlers) {
         if (m.type === "NAVIGATION_MODE") {
             handlers.onNavigationMode?.(
                 /** @type {{ type: string, isInNavigationMode?: boolean }} */ (
+                    message
+                ),
+            );
+        } else if (m.type === "TRIAGE_MODE") {
+            handlers.onTriageMode?.(
+                /** @type {{ type: string, isInTriageMode?: boolean }} */ (
                     message
                 ),
             );

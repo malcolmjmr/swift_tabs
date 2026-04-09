@@ -63,7 +63,9 @@ export function tryGlobalMenuShortcuts(event, ctx) {
         !helpMenuIsOpen &&
         !systemMenuIsOpen &&
         !settingsPageIsOpen &&
-        (ctx.isInNavigationMode ? ctx.getSelectedTab() : ctx.getCurrentTab())
+        (ctx.isInNavigationMode || ctx.getIsInTriageMode?.()
+            ? ctx.getSelectedTab()
+            : ctx.getCurrentTab())
     ) {
         event.preventDefault();
         event.stopPropagation();

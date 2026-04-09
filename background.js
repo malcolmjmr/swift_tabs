@@ -17,6 +17,7 @@ chrome.runtime.onInstalled.addListener(onInstalled);
 chrome.runtime.onMessage.addListener(onRuntimeMessage);
 chrome.tabs.onUpdated.addListener(onTabUpdated);
 chrome.tabs.onActivated.addListener(onTabActivated);
+chrome.windows.onFocusChanged.addListener(onWindowFocusChanged);
 
 
 
@@ -83,6 +84,18 @@ async function onTabActivated(activeInfo) {
     } catch (e) {
         // Content script may not be loaded (e.g. chrome://, new tab)
     }
+    try {
+        await chrome.tabs.sendMessage(activeInfo.tabId, {
+            type: "NAVIGATION_MODE",
+            isInNavigationMode,
+        });
+        await chrome.tabs.sendMessage(activeInfo.tabId, {
+            type: "TRIAGE_MODE",
+            isInTriageMode,
+        });
+    } catch (e) {
+        // Content script may not be loaded
+    }
     void broadcastTabsDataChanged();
 }
 
@@ -125,8 +138,10 @@ function onRuntimeMessage(message, sender, sendResponse) {
         handleTabSwitch(message.scrollDelta, sender.tab.id);
     } else if (message.type === 'TAB_SWITCHED') {
         notifyActiveTabOfTabSwitchingMode();
-    } else if (message.type === 'NAVIGATION_MODE') {
+    } else if (message.type === "NAVIGATION_MODE") {
         onNavigationModeMessage(message);
+    } else if (message.type === "TRIAGE_MODE") {
+        onTriageModeMessage(message, sender);
     } else if (message.type === 'OPEN_OPTIONS_PAGE') {
         chrome.runtime.openOptionsPage(() => {
             const err = chrome.runtime.lastError;
@@ -144,7 +159,28 @@ function onRuntimeMessage(message, sender, sendResponse) {
 
 var popupWindowId = null;
 var isInNavigationMode = false;
+var isInTriageMode = false;
+/** @type {number | null} */
+let lastFocusedWindowId = null;
 let scrollDelta = 0;
+
+/**
+ * Exit triage when the focused browser window changes (not just the active tab).
+ */
+function onWindowFocusChanged(windowId) {
+    if (windowId === chrome.windows.WINDOW_ID_NONE) {
+        return;
+    }
+    if (
+        isInTriageMode &&
+        lastFocusedWindowId != null &&
+        windowId !== lastFocusedWindowId
+    ) {
+        isInTriageMode = false;
+        void broadcastSwiftTabsUIModes();
+    }
+    lastFocusedWindowId = windowId;
+}
 async function handleTabSwitch(scrollUpdate, tabId) {
     const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (currentTab.id !== tabId) {
@@ -192,15 +228,57 @@ async function notifyTabOfTabSwitchingMode(tabId) {
 }
 
 
-async function onNavigationModeMessage(message) {
-    isInNavigationMode = message.isInNavigationMode;
-    let tabs = await chrome.tabs.query({});
+async function broadcastSwiftTabsUIModes() {
+    const tabs = await chrome.tabs.query({});
     for (const tab of tabs) {
-        chrome.tabs.sendMessage(tab.id, {
-            type: "NAVIGATION_MODE",
-            isInNavigationMode: isInNavigationMode,
-        });
+        if (tab.id == null) continue;
+        try {
+            await chrome.tabs.sendMessage(tab.id, {
+                type: "NAVIGATION_MODE",
+                isInNavigationMode,
+            });
+        } catch (e) {
+            // Content script may not be loaded
+        }
+        try {
+            await chrome.tabs.sendMessage(tab.id, {
+                type: "TRIAGE_MODE",
+                isInTriageMode,
+            });
+        } catch (e) {
+            // Content script may not be loaded
+        }
     }
+}
+
+async function onNavigationModeMessage(message) {
+    isInNavigationMode = message.isInNavigationMode === true;
+    if (isInNavigationMode) {
+        isInTriageMode = false;
+    }
+    await broadcastSwiftTabsUIModes();
+}
+
+/**
+ * @param {{ isInTriageMode?: boolean }} message
+ * @param {chrome.runtime.MessageSender} sender
+ */
+async function onTriageModeMessage(message, sender) {
+    isInTriageMode = message.isInTriageMode === true;
+    if (isInTriageMode) {
+        isInNavigationMode = false;
+        if (sender?.tab?.windowId != null) {
+            lastFocusedWindowId = sender.tab.windowId;
+        } else {
+            try {
+                const w = await chrome.windows.getLastFocused({ populate: false });
+                if (w?.id != null) lastFocusedWindowId = w.id;
+            } catch (e) {
+                // ignore
+            }
+        }
+    }
+    await broadcastSwiftTabsUIModes();
 }
 
 async function broadcastTabsDataChanged() {

@@ -17,6 +17,8 @@
     import {
         TAB_SWITCHING_DISMISS_MS,
         NEW_WINDOW_CONTEXT_TIMEOUT_MS,
+        TRIAGE_HORIZONTAL_AUTO_PX,
+        TRIAGE_HORIZONTAL_COMMIT_PX,
     } from "./app/constants.js";
     import {
         sortedOpenWindows as sortedOpenWindowsFromList,
@@ -24,7 +26,10 @@
         findTabById as findTabByIdInList,
         syncNavSlideToWindowId as indicesForWindowFocus,
         currentNavWindow as currentNavWindowFromState,
+        tabToSelectAfterClose,
     } from "./app/navWindowModel.js";
+    import { pickMoveTargetWindow } from "./app/triage/pickMoveTargetWindow.js";
+    import { clearTriageWheelIdleTimer } from "./app/gestures/triageScroll.js";
     import { subscribeChromeAppMessages } from "./app/chromeAppBridge.js";
     import { dispatchAppKeydown } from "./app/keyboard/dispatchAppKeydown.js";
     import { isInTypingContext } from "./app/domUtils.js";
@@ -35,7 +40,7 @@
     } from "./app/gestures/moveMode.js";
 
     let isInNavigationMode = false;
-    /** Toggled by space long-press; cleared when leaving navigation mode. No separate triage UI yet. */
+    /** Toggled by space long-press; shows TriageModeOverlay instead of TabsView. */
     let isInTriageMode = false;
     /** True after Cmd/Ctrl+Space from a text field until navigation mode ends. */
     let navigationEnteredFromTyping = false;
@@ -93,6 +98,12 @@
 
     const scrollSelectDeltaRef = { value: 0 };
     const scrollCarouselDeltaRef = { value: 0 };
+
+    let triageHorizontalPx = 0;
+    /** @type {number | null} */
+    let triageDragPointerId = null;
+    let triageDragStartX = 0;
+    let triageDragStartPx = 0;
     const moveModeVerticalAccumRef = { value: 0 };
     const moveModeHorizontalAccumRef = { value: 0 };
     const moveModeLastClientXYRef = { x: null, y: null };
@@ -136,33 +147,19 @@
     }
 
     function tabMenuContextTab() {
-        return isInNavigationMode ? selectedTab : currentTab;
+        return isInNavigationMode || isInTriageMode ? selectedTab : currentTab;
     }
 
     function openOmniboxFromShortcut() {
         omniboxQuery = "";
         omniboxIsOpen = true;
-        omniboxOpenedStandalone = !isInNavigationMode;
+        omniboxOpenedStandalone = !isInNavigationMode && !isInTriageMode;
         if (!isInNavigationMode) {
             isInNavigationMode = true;
             navigationEnteredFromTyping = false;
             chrome.runtime.sendMessage({
                 type: "NAVIGATION_MODE",
                 isInNavigationMode,
-            });
-        }
-    }
-
-    function toggleTriageModeFromLongPress() {
-        if (isInTriageMode) {
-            isInTriageMode = false;
-            return;
-        }
-        isInTriageMode = true;
-        if (!isInNavigationMode) {
-            chrome.runtime.sendMessage({
-                type: "NAVIGATION_MODE",
-                isInNavigationMode: true,
             });
         }
     }
@@ -196,8 +193,8 @@
                 await tabStore.refreshState();
                 await fetchTabInfo();
                 isInNavigationMode = false;
-                isInTriageMode = false;
                 navigationEnteredFromTyping = false;
+                resetTriageGestureState();
                 chrome.runtime.sendMessage({
                     type: "NAVIGATION_MODE",
                     isInNavigationMode,
@@ -209,8 +206,8 @@
             } else if (selectedTab) {
                 chromeService.activateTab(selectedTab.id);
                 isInNavigationMode = false;
-                isInTriageMode = false;
                 navigationEnteredFromTyping = false;
+                resetTriageGestureState();
                 chrome.runtime.sendMessage({
                     type: "NAVIGATION_MODE",
                     isInNavigationMode,
@@ -287,6 +284,147 @@
         persistentTabSelection = next;
     }
 
+    function removeTriagePointerWindowListeners() {
+        window.removeEventListener("pointermove", onTriageWindowPointerMove);
+        window.removeEventListener("pointerup", onTriageWindowPointerEnd);
+        window.removeEventListener("pointercancel", onTriageWindowPointerEnd);
+    }
+
+    function resetTriageGestureState() {
+        clearTriageWheelIdleTimer();
+        triageHorizontalPx = 0;
+        triageDragPointerId = null;
+        removeTriagePointerWindowListeners();
+    }
+
+    /** @param {PointerEvent} e */
+    function onTriageWindowPointerMove(e) {
+        if (triageDragPointerId !== e.pointerId) return;
+        const max = TRIAGE_HORIZONTAL_AUTO_PX;
+        let px = triageDragStartPx + (e.clientX - triageDragStartX);
+        px = Math.max(-max, Math.min(max, px));
+        triageHorizontalPx = px;
+        if (Math.abs(px) >= max) {
+            void runTriageHorizontalAction(px > 0 ? "right" : "left");
+            triageHorizontalPx = 0;
+            triageDragPointerId = null;
+            removeTriagePointerWindowListeners();
+            clearTriageWheelIdleTimer();
+        }
+    }
+
+    /** @param {PointerEvent} e */
+    function onTriageWindowPointerEnd(e) {
+        if (triageDragPointerId !== e.pointerId) return;
+        removeTriagePointerWindowListeners();
+        triageDragPointerId = null;
+        const px = triageHorizontalPx;
+        const abs = Math.abs(px);
+        clearTriageWheelIdleTimer();
+        if (abs >= TRIAGE_HORIZONTAL_AUTO_PX) {
+            triageHorizontalPx = 0;
+            return;
+        }
+        if (abs >= TRIAGE_HORIZONTAL_COMMIT_PX) {
+            void runTriageHorizontalAction(px > 0 ? "right" : "left");
+        }
+        triageHorizontalPx = 0;
+    }
+
+    /** @param {CustomEvent<PointerEvent>} ce */
+    function handleTriagePointerGestureStart(ce) {
+        const e = ce.detail;
+        if (!e) return;
+        if (!isInTriageMode) return;
+        if (e.pointerType === "mouse" && e.button !== 0) return;
+        if (triageDragPointerId != null) return;
+        triageDragPointerId = e.pointerId;
+        triageDragStartX = e.clientX;
+        triageDragStartPx = triageHorizontalPx;
+        window.addEventListener("pointermove", onTriageWindowPointerMove);
+        window.addEventListener("pointerup", onTriageWindowPointerEnd);
+        window.addEventListener("pointercancel", onTriageWindowPointerEnd);
+    }
+
+    async function onTriageVerticalStep(direction) {
+        const winId = currentTab?.windowId;
+        if (winId == null) return;
+        const wl = get(windows);
+        const win = wl.find((w) => w.id === winId);
+        if (!win?.tabs?.length) return;
+        const tabs = [...win.tabs].sort((a, b) => a.index - b.index);
+        const idx = tabs.findIndex((t) => t.id === currentTab?.id);
+        if (idx < 0) return;
+        const nextIdx = Math.max(
+            0,
+            Math.min(tabs.length - 1, idx + direction),
+        );
+        if (nextIdx === idx) return;
+        await chromeService.activateTab(tabs[nextIdx].id);
+        await tabStore.refreshState();
+        await fetchTabInfo();
+    }
+
+    /**
+     * @param {"left" | "right"} side left = close, right = move
+     */
+    async function runTriageHorizontalAction(side) {
+        clearTriageWheelIdleTimer();
+        removeTriagePointerWindowListeners();
+        triageDragPointerId = null;
+        triageHorizontalPx = 0;
+
+        const tab = selectedTab ?? currentTab;
+        if (tab?.id == null) return;
+
+        if (side === "left") {
+            const closedId = tab.id;
+            const closedTabIndex = tab.index;
+            const closedWindowId = tab.windowId;
+            await tabStore.closeTab(closedId);
+            await tabStore.refreshState();
+            const winAfter = [...get(windows)]
+                .filter((w) => w.tabs?.length > 0)
+                .sort((a, b) => a.id - b.id)
+                .find((w) => w.id === closedWindowId);
+            const tabsAfter = winAfter?.tabs?.length
+                ? [...winAfter.tabs].sort((a, b) => a.index - b.index)
+                : [];
+            selectedTab =
+                tabToSelectAfterClose(tabsAfter, closedTabIndex) ?? currentTab;
+            await fetchTabInfo();
+            return;
+        }
+
+        let target = pickMoveTargetWindow(
+            get(windows),
+            tab.id,
+            NEW_WINDOW_CONTEXT_TIMEOUT_MS,
+        );
+        if (
+            !target.createNew &&
+            target.windowId === tab.windowId
+        ) {
+            target = { createNew: true };
+        }
+
+        try {
+            if (target.createNew) {
+                await chromeService.createWindowWithTabs([tab.id], {
+                    focused: false,
+                });
+            } else {
+                await tabStore.moveTab(tab.id, target.windowId);
+            }
+        } catch (err) {
+            console.error(err);
+            return;
+        }
+
+        await tabStore.refreshState();
+        await fetchTabInfo();
+    }
+
     function handleDocumentClick() {
         setTimeout(() => {
             if (document.title !== lastDocumentTitle) {
@@ -308,7 +446,8 @@
     }
 
     function showActiveTabInfoForCurrentTab() {
-        if (isInNavigationMode || isInTabSwitchingMode) return;
+        if (isInNavigationMode || isInTriageMode || isInTabSwitchingMode)
+            return;
         showActiveTabInfo = true;
     }
 
@@ -331,9 +470,8 @@
     }
 
     async function onNavigationModeMessage(message) {
-        isInNavigationMode = message.isInNavigationMode;
+        isInNavigationMode = message.isInNavigationMode === true;
         if (!isInNavigationMode) {
-            isInTriageMode = false;
             navigationEnteredFromTyping = false;
         }
         resetNewWindowBatchContext();
@@ -347,6 +485,25 @@
             navSlideIndex = (idx >= 0 ? idx : 0) + 1;
             overviewFocusedWindowIndex = idx >= 0 ? idx : 0;
         }
+    }
+
+    async function onTriageModeMessage(message) {
+        isInTriageMode = message.isInTriageMode === true;
+        if (!isInTriageMode) {
+            resetTriageGestureState();
+            return;
+        }
+        resetNewWindowBatchContext();
+        clearPersistentTabSelection();
+        await tabStore.refreshState();
+        const wl = sortedOpenWindows();
+        const idx = currentTab
+            ? wl.findIndex((w) => w.id === currentTab.windowId)
+            : -1;
+        navSlideIndex = (idx >= 0 ? idx : 0) + 1;
+        overviewFocusedWindowIndex = idx >= 0 ? idx : 0;
+        resetTriageGestureState();
+        await fetchTabInfo();
     }
 
     async function onTabUpdatedMessage(message) {
@@ -383,7 +540,10 @@
         });
     }
 
-    $: if (isInNavigationMode && navViewMode !== "overview") {
+    $: if (
+        (isInNavigationMode || isInTriageMode) &&
+        navViewMode !== "overview"
+    ) {
         const wl = sortedOpenWindows();
         const kind = navEdgeSlideKind();
         const win = kind === "window" ? wl[navSlideIndex - 1] : null;
@@ -405,7 +565,10 @@
             }
             lastNavWindowIdForContext = wid;
         }
-    } else if (isInNavigationMode && navViewMode === "overview") {
+    } else if (
+        (isInNavigationMode || isInTriageMode) &&
+        navViewMode === "overview"
+    ) {
         const idx = overviewFocusedWindowIndex;
         if (
             lastOverviewIndexForContext >= 0 &&
@@ -415,7 +578,7 @@
             clearPersistentTabSelection();
         }
         lastOverviewIndexForContext = idx;
-    } else if (!isInNavigationMode) {
+    } else if (!isInNavigationMode && !isInTriageMode) {
         lastNavWindowIdForContext = null;
         lastOverviewIndexForContext = -1;
     }
@@ -426,7 +589,7 @@
             event.stopImmediatePropagation();
             return;
         }
-        if (!isInNavigationMode) return;
+        if (!isInNavigationMode && !isInTriageMode) return;
         if (
             tabMenuIsOpen ||
             omniboxIsOpen ||
@@ -525,13 +688,16 @@
             if (showActiveTabInfo) {
                 hideActiveTabInfo();
             }
-            if (isInNavigationMode) {
-                isInNavigationMode = false;
-                isInTriageMode = false;
+            if (isInNavigationMode || isInTriageMode) {
                 navigationEnteredFromTyping = false;
+                resetTriageGestureState();
+                chrome.runtime.sendMessage({
+                    type: "TRIAGE_MODE",
+                    isInTriageMode: false,
+                });
                 chrome.runtime.sendMessage({
                     type: "NAVIGATION_MODE",
-                    isInNavigationMode,
+                    isInNavigationMode: false,
                 });
             }
             if (isInTabSwitchingMode) {
@@ -554,6 +720,7 @@
     function isIdleForGlobalTabActions() {
         return (
             !isInNavigationMode &&
+            !isInTriageMode &&
             !omniboxIsOpen &&
             !tabMenuIsOpen &&
             !isInTabSwitchingMode &&
@@ -739,6 +906,13 @@
             tabStore,
             moveSelectedTabAdjacentWindow,
             togglePersistentTabSelection,
+            getIsInTriageMode: () => isInTriageMode,
+            getTriageHorizontalPx: () => triageHorizontalPx,
+            setTriageHorizontalPx: (n) => {
+                triageHorizontalPx = n;
+            },
+            runTriageHorizontalAction,
+            onTriageVerticalStep,
         };
     }
 
@@ -813,7 +987,6 @@
                 helpMenuIsOpen = v;
             },
             openOmniboxFromShortcut,
-            toggleTriageModeFromLongPress,
             enterNavigationModeFromTyping,
             getIsInNavigationMode: () => isInNavigationMode,
             shouldStealSpaceForNavWhileTyping,
@@ -902,6 +1075,13 @@
             },
             sortedOpenWindows,
             enterTabSwitchingMode,
+            getIsInTriageMode: () => isInTriageMode,
+            sendTriageMode: (/** @type {boolean} */ v) => {
+                chrome.runtime.sendMessage({
+                    type: "TRIAGE_MODE",
+                    isInTriageMode: v,
+                });
+            },
             getCurrentWindowTabs: () => get(currentWindowTabs),
             getActiveTabId: () => get(activeTabId),
             getActiveWindowId: () => get(activeWindowId),
@@ -915,23 +1095,49 @@
 
     async function onNavActivateTab(/** @type {chrome.tabs.Tab} */ tab) {
         await chromeService.activateTab(tab.id);
-        isInNavigationMode = false;
-        isInTriageMode = false;
         navigationEnteredFromTyping = false;
+        resetTriageGestureState();
+        chrome.runtime.sendMessage({
+            type: "TRIAGE_MODE",
+            isInTriageMode: false,
+        });
         chrome.runtime.sendMessage({
             type: "NAVIGATION_MODE",
-            isInNavigationMode,
+            isInNavigationMode: false,
         });
     }
 
-    $: activeInfoTab = isInNavigationMode
-        ? navEdgeSlideKind() === "history" ||
-          navEdgeSlideKind() === "create"
-            ? null
-            : selectedTab
-        : currentTab;
+    $: activeInfoTab = isInTriageMode
+        ? currentTab ?? selectedTab
+        : isInNavigationMode
+          ? navEdgeSlideKind() === "history" ||
+              navEdgeSlideKind() === "create"
+              ? null
+              : selectedTab
+          : currentTab;
+
+    $: triageTabList =
+        isInTriageMode && currentTab?.windowId != null
+            ? (() => {
+                  const win = get(windows).find(
+                      (w) => w.id === currentTab.windowId,
+                  );
+                  return win?.tabs?.length
+                      ? [...win.tabs].sort((a, b) => a.index - b.index)
+                      : [];
+              })()
+            : [];
+    $: triageActiveIndex = triageTabList.findIndex(
+        (t) => t.id === currentTab?.id,
+    );
+    $: triageCanScrollUp = triageActiveIndex > 0;
+    $: triageCanScrollDown =
+        triageActiveIndex >= 0 &&
+        triageActiveIndex < triageTabList.length - 1;
     $: showActiveInfoLayer =
-        (showActiveTabInfo || tabMenuIsOpen) && activeInfoTab;
+        (showActiveTabInfo || tabMenuIsOpen) &&
+        activeInfoTab &&
+        !isInTriageMode;
 
     onMount(async () => {
         console.log("App mounted");
@@ -943,6 +1149,7 @@
         await recentActionsStore.init();
         chromeUnsub = subscribeChromeAppMessages({
             onNavigationMode: onNavigationModeMessage,
+            onTriageMode: onTriageModeMessage,
             onTabSwitchingMode: onTabSwitchingModeMessage,
             onTabsDataChanged: onTabsDataChangedMessage,
             onTabUpdated: onTabUpdatedMessage,
@@ -960,6 +1167,7 @@
         clearMetaLongPressTimer();
         clearAltLongPressTimer();
         clearCtrlLongPressTimer();
+        resetTriageGestureState();
         chromeUnsub();
     });
 </script>
@@ -1010,6 +1218,11 @@
     currentWindowTabs={$currentWindowTabs}
     {showActiveInfoLayer}
     activeInfoTab={activeInfoTab}
+    {isInTriageMode}
+    triageHorizontalPx={triageHorizontalPx}
+    triageCanScrollUp={triageCanScrollUp}
+    triageCanScrollDown={triageCanScrollDown}
+    onTriagePointerGestureStart={handleTriagePointerGestureStart}
 />
 
 <style>

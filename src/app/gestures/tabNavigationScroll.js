@@ -2,6 +2,7 @@ import {
     navEdgeSlideKindFromState,
     sortedOpenWindows,
 } from "../navWindowModel.js";
+import { tryHandleTriageModeWheel } from "./triageScroll.js";
 
 /**
  * @param {object} ctx
@@ -209,7 +210,11 @@ export function handleWheelDocument(event, ctx) {
         return;
     }
 
-    if (!isInNavigationMode && !event.metaKey) {
+    if (
+        !isInNavigationMode &&
+        !ctx.getIsInTriageMode?.() &&
+        !event.metaKey
+    ) {
         if (getShowActiveTabInfo() && event.deltaY > 0) {
             hideActiveTabInfo();
         }
@@ -229,6 +234,12 @@ export function handleWheelDocument(event, ctx) {
         } else {
             applyMoveModeDeltas(event.deltaX, 0);
         }
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+    }
+
+    if (ctx.getIsInTriageMode?.() && tryHandleTriageModeWheel(event, ctx)) {
         event.preventDefault();
         event.stopPropagation();
         return;

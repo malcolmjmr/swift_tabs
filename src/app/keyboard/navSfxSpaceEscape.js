@@ -21,9 +21,6 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         clearSpaceLongPressTimer,
         setSpaceArm,
         setSpaceLongPressFired,
-        setSpaceLongPressTimer,
-        longPressThreshold,
-        toggleTriageModeFromLongPress,
         getTabsViewRef,
         setSelectedTab,
         linkEsc,
@@ -36,10 +33,12 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         setTabSwitchingDismissTimeout,
         hideActiveTabInfo,
         getShowActiveTabInfo,
+        getIsInTriageMode,
+        sendTriageMode,
     } = ctx;
 
     if (
-        isInNavigationMode &&
+        (isInNavigationMode || getIsInTriageMode?.()) &&
         !omniboxIsOpen &&
         !tabMenuIsOpen &&
         !helpMenuIsOpen &&
@@ -107,22 +106,6 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         setSpaceArm(true);
         setSpaceLongPressFired(false);
         clearSpaceLongPressTimer();
-        setSpaceLongPressTimer(
-            setTimeout(() => {
-                ctx.setSpaceLongPressTimer(null);
-                if (
-                    ctx.getHelpMenuIsOpen() ||
-                    ctx.getTabMenuIsOpen() ||
-                    ctx.getOmniboxIsOpen() ||
-                    ctx.getSystemMenuIsOpen() ||
-                    ctx.getSettingsPageIsOpen()
-                ) {
-                    return;
-                }
-                setSpaceLongPressFired(true);
-                toggleTriageModeFromLongPress();
-            }, longPressThreshold),
-        );
         return true;
     }
 
@@ -169,6 +152,12 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         if (getShowActiveTabInfo()) {
             event.preventDefault();
             hideActiveTabInfo();
+            return true;
+        }
+        if (getIsInTriageMode?.()) {
+            event.preventDefault();
+            event.stopPropagation();
+            sendTriageMode?.(false);
             return true;
         }
         if (
