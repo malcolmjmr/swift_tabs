@@ -40,10 +40,7 @@ export function tryGlobalMenuShortcuts(event, ctx) {
         return true;
     }
     if (
-        (event.key === "o" ||
-            event.key === "O" ||
-            event.key === "n" ||
-            event.key === "N") &&
+        (event.key === "n" || event.key === "N") &&
         noModifiersStrict(event) &&
         !omniboxIsOpen &&
         !tabMenuIsOpen &&

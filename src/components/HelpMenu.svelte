@@ -31,7 +31,7 @@
                 <li><kbd>⌘</kbd> + scroll — Tab / window navigation (when applicable)</li>
                 <li><kbd>Enter</kbd> — Move selected tab(s) to a new window (unfocused); further <kbd>Enter</kbd> moves more tabs into the same new window until you change slide or exit</li>
                 <li><kbd>Shift</kbd> (tap) — Add or remove the highlighted tab from the multi-select set (batch move with <kbd>Enter</kbd>)</li>
-                <li>Right-click (quick, no scroll) — Same multi-select toggle as <kbd>Shift</kbd></li>
+                <li><kbd>Shift</kbd> + scroll (vertical tab list) — Each tab you land on is added to multi-select, or removed if it was already selected</li>
                 <li>Right-click hold + drag — Move mode: drag vertically to reorder; drag horizontally to move to the next/previous window (no wrap — at the last window, a new window is created). The carousel follows the tab’s window while dragging; the real browser focus stays on your current window; on release, the carousel snaps to the focused (active) window. Wheel still works if the device fires wheel while RMB is held.</li>
                 <li>Navigation mode — context menus on the page (e.g. video players) are suppressed so Swift Tabs gestures aren’t interrupted.</li>
             </ul>
@@ -39,8 +39,8 @@
         <section>
             <h3>Omnibox</h3>
             <ul>
-                <li><kbd>Space</kbd> (hold) — Open omnibox (enters navigation mode if needed)</li>
-                <li><kbd>o</kbd> / <kbd>n</kbd> — Open omnibox (enters navigation mode if needed)</li>
+                <li><kbd>Space</kbd> (hold) — Toggle triage mode (enters navigation mode when turning triage on, if needed); hold again to turn triage off</li>
+                <li><kbd>n</kbd> — Open omnibox (enters navigation mode if needed)</li>
                 <li>In navigation mode, type any character — Search tabs</li>
             </ul>
         </section>
@@ -66,7 +66,7 @@
         <section>
             <h3>Idle tab actions</h3>
             <p class="help-menu__note">
-                When not in navigation mode, omnibox, tab menu, group menu, settings, tab switching overlay,
+                In a text field: <kbd>⌘</kbd> + <kbd>Space</kbd> (macOS) or <kbd>Ctrl</kbd> + <kbd>Space</kbd> (Windows/Linux) enters navigation mode. When not in navigation mode, omnibox, tab menu, group menu, settings, tab switching overlay,
                 or this help panel (no modifier keys except <kbd>?</kbd> as noted):
             </p>
             <ul>

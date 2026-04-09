@@ -1,5 +1,5 @@
 <script>
-    import { fly } from "svelte/transition";
+    import { fade, fly } from "svelte/transition";
     import TabSwitchingModal from "../TabSwitchingModal.svelte";
     import TabMenu from "../tab/TabMenu.svelte";
     import SystemMenu from "../SystemMenu.svelte";
@@ -89,10 +89,8 @@
             }}
         />
     {/if}
-{:else if isInTabSwitchingMode && currentWindowTabs.length > 0}
-    <TabSwitchingModal {currentWindowTabs} {activeTabId} />
-{:else if showActiveInfoLayer && activeInfoTab}
-    <div in:fly={{ y: 20, duration: 150 }} out:fly={{ y: 20, duration: 200 }}>
+{:else if (showActiveInfoLayer && activeInfoTab) || isInTabSwitchingMode}
+    <div in:fade={{ duration: 150 }} out:fade={{ duration: 200 }}>
         <ActiveTabInfo
             tab={activeInfoTab}
             on:menuRequest={() => {

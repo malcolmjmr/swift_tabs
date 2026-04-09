@@ -27,6 +27,7 @@
     } from "./app/navWindowModel.js";
     import { subscribeChromeAppMessages } from "./app/chromeAppBridge.js";
     import { dispatchAppKeydown } from "./app/keyboard/dispatchAppKeydown.js";
+    import { isInTypingContext } from "./app/domUtils.js";
     import { handleWheelDocument } from "./app/gestures/tabNavigationScroll.js";
     import {
         applyMoveModeDeltas as applyMoveModeDeltasImpl,
@@ -34,6 +35,10 @@
     } from "./app/gestures/moveMode.js";
 
     let isInNavigationMode = false;
+    /** Toggled by space long-press; cleared when leaving navigation mode. No separate triage UI yet. */
+    let isInTriageMode = false;
+    /** True after Cmd/Ctrl+Space from a text field until navigation mode ends. */
+    let navigationEnteredFromTyping = false;
     let omniboxIsOpen = false;
     let omniboxQuery = "";
     let omniboxOpenedStandalone = false;
@@ -140,11 +145,46 @@
         omniboxOpenedStandalone = !isInNavigationMode;
         if (!isInNavigationMode) {
             isInNavigationMode = true;
+            navigationEnteredFromTyping = false;
             chrome.runtime.sendMessage({
                 type: "NAVIGATION_MODE",
                 isInNavigationMode,
             });
         }
+    }
+
+    function toggleTriageModeFromLongPress() {
+        if (isInTriageMode) {
+            isInTriageMode = false;
+            return;
+        }
+        isInTriageMode = true;
+        if (!isInNavigationMode) {
+            chrome.runtime.sendMessage({
+                type: "NAVIGATION_MODE",
+                isInNavigationMode: true,
+            });
+        }
+    }
+
+    function enterNavigationModeFromTyping() {
+        if (isInNavigationMode) return;
+        navigationEnteredFromTyping = true;
+        chrome.runtime.sendMessage({
+            type: "NAVIGATION_MODE",
+            isInNavigationMode: true,
+        });
+    }
+
+    /** Space can be hijacked for nav while the field still has focus only when previewing another tab. */
+    function shouldStealSpaceForNavWhileTyping() {
+        return (
+            navigationEnteredFromTyping &&
+            isInNavigationMode &&
+            selectedTab?.id != null &&
+            currentTab?.id != null &&
+            selectedTab.id !== currentTab.id
+        );
     }
 
     async function handleSpaceShortPress() {
@@ -156,6 +196,8 @@
                 await tabStore.refreshState();
                 await fetchTabInfo();
                 isInNavigationMode = false;
+                isInTriageMode = false;
+                navigationEnteredFromTyping = false;
                 chrome.runtime.sendMessage({
                     type: "NAVIGATION_MODE",
                     isInNavigationMode,
@@ -167,6 +209,8 @@
             } else if (selectedTab) {
                 chromeService.activateTab(selectedTab.id);
                 isInNavigationMode = false;
+                isInTriageMode = false;
+                navigationEnteredFromTyping = false;
                 chrome.runtime.sendMessage({
                     type: "NAVIGATION_MODE",
                     isInNavigationMode,
@@ -288,6 +332,10 @@
 
     async function onNavigationModeMessage(message) {
         isInNavigationMode = message.isInNavigationMode;
+        if (!isInNavigationMode) {
+            isInTriageMode = false;
+            navigationEnteredFromTyping = false;
+        }
         resetNewWindowBatchContext();
         clearPersistentTabSelection();
         if (isInNavigationMode) {
@@ -434,15 +482,6 @@
     async function handleMouseUp(event) {
         linkMenuHostRef?.onMouseUpForLink(event);
         if (event.button === 2) {
-            if (
-                isInNavigationMode &&
-                secondaryButtonDown &&
-                !secondaryGestureHadScroll &&
-                selectedTab &&
-                navEdgeSlideKind() === "window"
-            ) {
-                togglePersistentTabSelection(selectedTab.id);
-            }
             if (isInNavigationMode && moveModeHadCrossWindowMove) {
                 await tabStore.refreshState();
                 const focusedWinId = get(activeWindowId);
@@ -488,6 +527,8 @@
             }
             if (isInNavigationMode) {
                 isInNavigationMode = false;
+                isInTriageMode = false;
+                navigationEnteredFromTyping = false;
                 chrome.runtime.sendMessage({
                     type: "NAVIGATION_MODE",
                     isInNavigationMode,
@@ -697,6 +738,7 @@
             },
             tabStore,
             moveSelectedTabAdjacentWindow,
+            togglePersistentTabSelection,
         };
     }
 
@@ -707,9 +749,21 @@
     function handleKeyup(event) {
         const isSpace = event.key === " " || event.code === "Space";
         if (isSpace) {
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
+            const typing = isInTypingContext();
+            const sameAsCurrent =
+                selectedTab?.id != null &&
+                currentTab?.id != null &&
+                selectedTab.id === currentTab.id;
+            const allowDefaultSpaceInField =
+                navigationEnteredFromTyping &&
+                isInNavigationMode &&
+                typing &&
+                sameAsCurrent;
+            if (!allowDefaultSpaceInField) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+            }
         }
 
         if (isSpace && spaceArm) {
@@ -759,6 +813,10 @@
                 helpMenuIsOpen = v;
             },
             openOmniboxFromShortcut,
+            toggleTriageModeFromLongPress,
+            enterNavigationModeFromTyping,
+            getIsInNavigationMode: () => isInNavigationMode,
+            shouldStealSpaceForNavWhileTyping,
             setTabMenuIsOpen: (v) => {
                 tabMenuIsOpen = v;
             },
@@ -858,6 +916,8 @@
     async function onNavActivateTab(/** @type {chrome.tabs.Tab} */ tab) {
         await chromeService.activateTab(tab.id);
         isInNavigationMode = false;
+        isInTriageMode = false;
+        navigationEnteredFromTyping = false;
         chrome.runtime.sendMessage({
             type: "NAVIGATION_MODE",
             isInNavigationMode,

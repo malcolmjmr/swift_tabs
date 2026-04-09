@@ -6,7 +6,13 @@ import {
 /**
  * @param {object} ctx
  */
-export function handleVerticalTabScroll(scrollUpdate, ctx) {
+/**
+ * @param {number} scrollUpdate
+ * @param {object} ctx
+ * @param {{ shiftKey?: boolean }} [wheelOpts]
+ */
+export function handleVerticalTabScroll(scrollUpdate, ctx, wheelOpts = {}) {
+    const shiftKey = wheelOpts.shiftKey === true;
     const {
         isInNavigationMode,
         getWindowsList,
@@ -18,6 +24,7 @@ export function handleVerticalTabScroll(scrollUpdate, ctx) {
         getTabsViewRef,
         scrollVerticalThreshold,
         scrollSelectDeltaRef,
+        togglePersistentTabSelection,
     } = ctx;
 
     if (isInNavigationMode) {
@@ -46,6 +53,9 @@ export function handleVerticalTabScroll(scrollUpdate, ctx) {
                     Math.min(tabs.length - 1, idx + direction),
                 );
                 setSelectedTab(tabs[nextIndex]);
+                if (shiftKey && togglePersistentTabSelection) {
+                    togglePersistentTabSelection(tabs[nextIndex].id);
+                }
             }
             return;
         }
@@ -102,6 +112,9 @@ export function handleVerticalTabScroll(scrollUpdate, ctx) {
                 Math.min(tabs.length - 1, idx + direction),
             );
             setSelectedTab(tabs[nextIndex]);
+            if (shiftKey && togglePersistentTabSelection) {
+                togglePersistentTabSelection(tabs[nextIndex].id);
+            }
         }
     } else {
         chrome.runtime.sendMessage({
@@ -225,7 +238,9 @@ export function handleWheelDocument(event, ctx) {
         const isVerticalScroll =
             Math.abs(event.deltaX) < Math.abs(event.deltaY);
         if (isVerticalScroll) {
-            handleVerticalTabScroll(event.deltaY, ctx);
+            handleVerticalTabScroll(event.deltaY, ctx, {
+                shiftKey: event.shiftKey,
+            });
         } else {
             handleHorizontalCarouselScroll(event.deltaX, ctx);
         }
@@ -237,7 +252,9 @@ export function handleWheelDocument(event, ctx) {
     const isVerticalScroll =
         Math.abs(event.deltaX) < Math.abs(event.deltaY);
     if (isVerticalScroll) {
-        handleVerticalTabScroll(event.deltaY, ctx);
+        handleVerticalTabScroll(event.deltaY, ctx, {
+            shiftKey: event.shiftKey,
+        });
     } else {
         handleHorizontalCarouselScroll(event.deltaX, ctx);
     }

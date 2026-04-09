@@ -23,7 +23,7 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         setSpaceLongPressFired,
         setSpaceLongPressTimer,
         longPressThreshold,
-        openOmniboxFromShortcut,
+        toggleTriageModeFromLongPress,
         getTabsViewRef,
         setSelectedTab,
         linkEsc,
@@ -107,14 +107,6 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         setSpaceArm(true);
         setSpaceLongPressFired(false);
         clearSpaceLongPressTimer();
-        if (
-            isInNavigationMode &&
-            noModifiersStrict(event) &&
-            (getTabsViewRef()?.getNavSlideKind?.() ?? navEdgeSlideKind()) ===
-                "create"
-        ) {
-            return true;
-        }
         setSpaceLongPressTimer(
             setTimeout(() => {
                 ctx.setSpaceLongPressTimer(null);
@@ -128,7 +120,7 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
                     return;
                 }
                 setSpaceLongPressFired(true);
-                openOmniboxFromShortcut();
+                toggleTriageModeFromLongPress();
             }, longPressThreshold),
         );
         return true;
