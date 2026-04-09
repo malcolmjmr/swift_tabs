@@ -374,6 +374,41 @@ async function apiGetSessionsOtherDevices() {
     return result;
 }
 
+/**
+ * After cross-window tab moves, Chrome may focus the destination window.
+ * Restore focus to the window that hosts the Swift Tabs content script so
+ * "new window" / move flows stay in the TabsView until the user activates a tab.
+ */
+async function restoreChromeWindowFocus(preferredWindowId, avoidWindowIds = []) {
+    if (
+        preferredWindowId != null &&
+        avoidWindowIds.includes(preferredWindowId)
+    ) {
+        preferredWindowId = null;
+    }
+    const tryFocus = async (id) => {
+        try {
+            await chrome.windows.get(id);
+            await chrome.windows.update(id, { focused: true });
+            return true;
+        } catch {
+            return false;
+        }
+    };
+    if (preferredWindowId != null && (await tryFocus(preferredWindowId))) {
+        return;
+    }
+    const wins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    const pick = wins.find((w) => !avoidWindowIds.includes(w.id));
+    if (pick) {
+        try {
+            await chrome.windows.update(pick.id, { focused: true });
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
 const chromeApiHandlers = {
 
     async GET_CURRENT_TAB(_, sender) {
@@ -436,9 +471,18 @@ const chromeApiHandlers = {
         return chrome.tabs.create(options);
     },
 
-    async MOVE_TAB({ tabId, targetWindowId }) {
+    async MOVE_TAB({ tabId, targetWindowId }, sender) {
+        const t = await chrome.tabs.get(tabId);
+        const fromWindowId = t.windowId;
+        const restoreToWindowId = sender?.tab?.windowId ?? null;
         await chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 });
         broadcastTabsDataChanged();
+        if (
+            restoreToWindowId != null &&
+            fromWindowId !== targetWindowId
+        ) {
+            await restoreChromeWindowFocus(restoreToWindowId, []);
+        }
         return { success: true };
     },
 
@@ -475,8 +519,9 @@ const chromeApiHandlers = {
         return { success: true };
     },
 
-    async CREATE_WINDOW({ tabId, tabIds, focused = false }) {
+    async CREATE_WINDOW({ tabId, tabIds, focused = false }, sender) {
         const useFocused = focused === true;
+        const restoreToWindowId = sender?.tab?.windowId ?? null;
         const ids =
             Array.isArray(tabIds) && tabIds.length > 0
                 ? [...new Set(tabIds)]
@@ -509,6 +554,9 @@ const chromeApiHandlers = {
         }
         if (blankTab?.id) {
             await chrome.tabs.remove(blankTab.id);
+        }
+        if (!useFocused) {
+            await restoreChromeWindowFocus(restoreToWindowId, [newWindow.id]);
         }
         broadcastTabsDataChanged();
         return chrome.windows.get(newWindow.id, { populate: true });

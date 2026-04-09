@@ -378,6 +378,7 @@
 {#if nWindows > 0}
     <div
         class="tabs-view-card"
+        data-demo="tabs-card"
         role="region"
         aria-label="Tabs navigation"
         on:contextmenu|capture|preventDefault

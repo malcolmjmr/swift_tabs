@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "rollup -c",
+    "build:demo": "rollup -c && rm -rf dist/demo/dist && cp src/demo/demo-shell.html dist/demo/demo.html",
     "dev": "rollup -c -w",
     "start": "npm run dev"
   },
