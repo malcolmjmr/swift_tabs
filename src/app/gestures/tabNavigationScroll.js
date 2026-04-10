@@ -4,9 +4,22 @@ import {
 } from "../navWindowModel.js";
 import { tryHandleTriageModeWheel } from "./triageScroll.js";
 
+/** @type {((deltaPx: number) => void) | null} */
+let tabMenuWheelSelectHandler = null;
+
 /**
- * @param {object} ctx
+ * While the tab menu is open, vertical wheel deltas are forwarded here so the
+ * menu can move selection (see TabMenu.svelte).
+ * @param {(deltaPx: number) => void} handler
  */
+export function registerTabMenuWheelSelect(handler) {
+    tabMenuWheelSelectHandler = handler;
+}
+
+export function unregisterTabMenuWheelSelect() {
+    tabMenuWheelSelectHandler = null;
+}
+
 /**
  * @param {number} scrollUpdate
  * @param {object} ctx
@@ -200,7 +213,20 @@ export function handleWheelDocument(event, ctx) {
         applyMoveModeDeltas,
     } = ctx;
 
-    if (tabMenuIsOpen || systemMenuIsOpen || settingsPageIsOpen) return;
+    if (systemMenuIsOpen || settingsPageIsOpen) return;
+
+    if (tabMenuIsOpen) {
+        if (tabMenuWheelSelectHandler) {
+            const isVerticalScroll =
+                Math.abs(event.deltaX) < Math.abs(event.deltaY);
+            if (isVerticalScroll) {
+                tabMenuWheelSelectHandler(event.deltaY);
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        return;
+    }
 
     const wheelEl =
         event.target instanceof Element
