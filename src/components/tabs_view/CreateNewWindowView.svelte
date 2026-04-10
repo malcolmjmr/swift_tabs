@@ -202,7 +202,9 @@
                         class="history-item-icon history-item-icon-svg"
                         aria-hidden="true"
                     />
-                    <span class="history-title create-row-label">{row.label}</span>
+                    <span class="history-title create-row-label"
+                        >{row.label}</span
+                    >
                     {#if row.key === selectedRowKey}
                         <kbd class="create-space-kbd">Space</kbd>
                     {/if}
@@ -311,6 +313,8 @@
         height: 24px;
         object-fit: contain;
         opacity: 0.55;
+        padding: 0px;
+        margin: 0px;
     }
 
     .history-item.selected .history-item-icon.history-item-icon-svg,
@@ -336,7 +340,7 @@
 
     .create-space-kbd {
         flex-shrink: 0;
-        margin-left: auto;
+        margin: 0px;
         display: inline-flex;
         align-items: center;
         justify-content: center;

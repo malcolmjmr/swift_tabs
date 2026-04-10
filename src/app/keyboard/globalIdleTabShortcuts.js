@@ -1,4 +1,4 @@
-import { noModifiersStrict } from "../domUtils.js";
+import { isInTypingContext, noModifiersStrict } from "../domUtils.js";
 
 /**
  * @param {KeyboardEvent} event
@@ -6,6 +6,7 @@ import { noModifiersStrict } from "../domUtils.js";
  * @returns {Promise<boolean>}
  */
 export async function tryGlobalIdleTabShortcuts(event, ctx) {
+    if (isInTypingContext()) return false;
     const {
         isIdleForGlobalTabActions,
         getCurrentTab,

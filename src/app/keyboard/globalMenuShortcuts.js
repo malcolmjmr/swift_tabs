@@ -1,12 +1,17 @@
-import { noModifiersForHelpKey, noModifiersStrict } from "../domUtils.js";
+import {
+    isInTypingContext,
+    noModifiersForHelpKey,
+    noModifiersStrict,
+} from "../domUtils.js";
 
 /**
- * Help, omnibox open, tab menu, Meta/Alt/Ctrl long-press → menus.
+ * Help, omnibox open; Alt/Ctrl long-press → system/settings. Tab menu opens only in navigation mode (Meta release in App).
  * @param {KeyboardEvent} event
  * @param {object} ctx
  * @returns {boolean} true if handled
  */
 export function tryGlobalMenuShortcuts(event, ctx) {
+    if (isInTypingContext()) return false;
     const {
         isIdleForGlobalTabActions,
         omniboxIsOpen,
@@ -14,20 +19,28 @@ export function tryGlobalMenuShortcuts(event, ctx) {
         helpMenuIsOpen,
         systemMenuIsOpen,
         settingsPageIsOpen,
-        tabMenuContextTab,
         longPressThreshold,
-        clearMetaLongPressTimer,
         clearAltLongPressTimer,
         clearCtrlLongPressTimer,
         setHelpMenuIsOpen,
-        openOmniboxFromShortcut,
-        setTabMenuIsOpen,
         setSystemMenuIsOpen,
         setSettingsPageIsOpen,
-        setMetaLongPressTimer,
         setAltLongPressTimer,
         setCtrlLongPressTimer,
+        getMoveMenuOpen,
+        getShowActiveTabAddress,
+        clearNLongPressTimer,
+        setNLongPressTimer,
+        setNLongPressFired,
+        setNArm,
+        chromeService,
+        tabStore,
+        fetchTabInfo,
     } = ctx;
+
+    const blockingOverlay =
+        getMoveMenuOpen?.() ||
+        getShowActiveTabAddress?.();
 
     if (
         ((event.key === "?" && noModifiersForHelpKey(event)) ||
@@ -42,61 +55,31 @@ export function tryGlobalMenuShortcuts(event, ctx) {
     if (
         (event.key === "n" || event.key === "N") &&
         noModifiersStrict(event) &&
-        !omniboxIsOpen &&
-        !tabMenuIsOpen &&
-        !helpMenuIsOpen &&
-        !systemMenuIsOpen &&
-        !settingsPageIsOpen
-    ) {
-        event.preventDefault();
-        event.stopPropagation();
-        openOmniboxFromShortcut();
-        return true;
-    }
-    if (
-        (event.key === "a" ||
-            event.key === "A" ||
-            event.key === "m" ||
-            event.key === "M") &&
-        noModifiersStrict(event) &&
-        !tabMenuIsOpen &&
-        !helpMenuIsOpen &&
-        !systemMenuIsOpen &&
-        !settingsPageIsOpen &&
-        (ctx.isInNavigationMode || ctx.getIsInTriageMode?.()
-            ? ctx.getSelectedTab()
-            : ctx.getCurrentTab())
-    ) {
-        event.preventDefault();
-        event.stopPropagation();
-        setTabMenuIsOpen(true);
-        return true;
-    }
-    if (
-        (event.key === "Meta" || event.key === "OS") &&
         !event.repeat &&
-        !helpMenuIsOpen &&
-        !tabMenuIsOpen &&
         !omniboxIsOpen &&
+        !tabMenuIsOpen &&
+        !helpMenuIsOpen &&
         !systemMenuIsOpen &&
         !settingsPageIsOpen &&
-        tabMenuContextTab()
+        !blockingOverlay
     ) {
-        clearMetaLongPressTimer();
-        setMetaLongPressTimer(
+        event.preventDefault();
+        event.stopPropagation();
+        clearNLongPressTimer();
+        setNLongPressFired(false);
+        setNArm(true);
+        setNLongPressTimer(
             setTimeout(() => {
-                setMetaLongPressTimer(null);
-                if (
-                    ctx.getHelpMenuIsOpen() ||
-                    ctx.getTabMenuIsOpen() ||
-                    ctx.getOmniboxIsOpen() ||
-                    ctx.getSystemMenuIsOpen() ||
-                    ctx.getSettingsPageIsOpen()
-                ) {
-                    return;
-                }
-                if (!tabMenuContextTab()) return;
-                setTabMenuIsOpen(true);
+                setNLongPressTimer(null);
+                setNLongPressFired(true);
+                void (async () => {
+                    await chromeService.createTab({
+                        url: "chrome://newtab/",
+                        active: true,
+                    });
+                    await tabStore.refreshState();
+                    await fetchTabInfo();
+                })();
             }, longPressThreshold),
         );
         return true;
@@ -108,7 +91,8 @@ export function tryGlobalMenuShortcuts(event, ctx) {
         !tabMenuIsOpen &&
         !omniboxIsOpen &&
         !systemMenuIsOpen &&
-        !settingsPageIsOpen
+        !settingsPageIsOpen &&
+        !blockingOverlay
     ) {
         clearAltLongPressTimer();
         setAltLongPressTimer(
@@ -135,7 +119,8 @@ export function tryGlobalMenuShortcuts(event, ctx) {
         !tabMenuIsOpen &&
         !omniboxIsOpen &&
         !systemMenuIsOpen &&
-        !settingsPageIsOpen
+        !settingsPageIsOpen &&
+        !blockingOverlay
     ) {
         clearCtrlLongPressTimer();
         setCtrlLongPressTimer(

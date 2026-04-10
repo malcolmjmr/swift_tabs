@@ -36,8 +36,8 @@
                 chromeService.getBookmarksBar().catch(() => []),
                 chromeService.getAllBookmarks().catch(() => []),
             ]);
-            bookmarksBarCache = barBookmarks;
-            allBookmarksCache = allBookmarks;
+            bookmarksBarCache = Array.isArray(barBookmarks) ? barBookmarks : [];
+            allBookmarksCache = Array.isArray(allBookmarks) ? allBookmarks : [];
         } finally {
             loading = false;
         }
@@ -45,7 +45,12 @@
 
     $: q = debouncedQuery.trim().toLowerCase();
     $: debouncedQuery, (selectedResultIndex = 0);
-    $: visibleResults = filterBookmarks(q);
+    $: visibleResults =
+        dataEnabled &&
+        (bookmarksBarCache.length > 0 || allBookmarksCache.length > 0)
+            ? filterBookmarks(q)
+            : [];
+
     $: {
         const max = Math.max(0, visibleResults.length - 1);
         if (selectedResultIndex > max) selectedResultIndex = max;
@@ -168,20 +173,21 @@
 {:else}
     {#if bookmarksBarCache.length > 0 && !query.trim()}
         <div class="bookmark-bar-section">
-            <div class="section-header">Bookmark Bar</div>
             <div class="bookmark-bar-grid">
                 {#each bookmarksBarCache as bookmark}
                     <button
                         type="button"
                         class="bookmark-bar-item"
                         on:click={() =>
-                            void chromeService.createTab({
-                                url: bookmark.url,
-                                active: true,
-                            }).then(() => {
-                                dispatch("submit");
-                                dispatch("close");
-                            })}
+                            void chromeService
+                                .createTab({
+                                    url: bookmark.url,
+                                    active: true,
+                                })
+                                .then(() => {
+                                    dispatch("submit");
+                                    dispatch("close");
+                                })}
                     >
                         <img
                             src={`https://www.google.com/s2/favicons?domain=${extractDomain(bookmark.url)}&sz=32`}
@@ -196,10 +202,6 @@
                 {/each}
             </div>
         </div>
-
-        {#if allBookmarksCache.length > 0}
-            <div class="section-header">All Bookmarks</div>
-        {/if}
     {/if}
 
     <div bind:this={resultsListEl} class="results-list" role="listbox">
@@ -237,8 +239,7 @@
 
     .bookmark-bar-section {
         padding-bottom: 8px;
-        border-bottom: 1px solid
-            var(--st-border-color, rgba(255, 255, 255, 0.1));
+
         margin-bottom: 8px;
     }
 
@@ -255,8 +256,8 @@
         gap: 6px;
         padding: 6px 10px;
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
-        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
-        border-radius: 6px;
+        border: none;
+        border-radius: 20px;
         cursor: pointer;
         transition: background 0.15s;
         max-width: 150px;

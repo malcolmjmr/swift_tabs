@@ -37,6 +37,8 @@ export function getResultIcon(item) {
         tab: "tab",
         bookmark: "bookmark",
         history: "history",
+        reading: "menu_book",
+        download: "download",
         news: "newspaper",
         trending: "trending_up",
         hypothesisPage: "highlight",
@@ -48,9 +50,18 @@ export function getResultIcon(item) {
  * @param {object} item
  */
 export function getResultSubtitle(item) {
-    if (item.subtitle) return item.subtitle;
+    if (item.url) return item.domain ? item.domain.replace('www.', '') : extractDomain(item.url);
+
     if (item.type === "app")
         return `${item.visitCount} visits · ${item.domain}`;
+    if (item.type === "reading") {
+        const status = item.hasBeenRead ? "Read" : "Unread";
+        return item.url ? `${status} · ${item.url}` : status;
+    }
+    if (item.type === "download") {
+        return item.filename || item.url || "";
+    }
+    if (item.subtitle) return item.subtitle;
     return item.url || "";
 }
 
@@ -76,7 +87,7 @@ export function getResultFaviconSrc(item, faviconFailedByKey) {
             ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`
             : null;
     }
-    if (item.type !== "tab" && item.type !== "history") return null;
+
     if (faviconFailedByKey[resultFaviconKey(item)]) return null;
     const domain = extractDomain(item.url || "");
     const google =

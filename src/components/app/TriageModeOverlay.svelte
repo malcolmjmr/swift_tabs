@@ -81,12 +81,7 @@
         on:pointerdown={(e) => dispatch("pointergesturestart", e)}
     >
         <div class="triage-card-slot">
-            <ActiveTabInfo
-                {tab}
-                on:menuRequest={() => {
-                    dispatch("menuRequest");
-                }}
-            />
+            <ActiveTabInfo {tab} />
         </div>
         <div
             class="triage-under-icons"

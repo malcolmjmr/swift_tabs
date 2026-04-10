@@ -8,19 +8,10 @@
     import {
         DEFAULT_SECTION_ID,
         DEFAULT_SECTION_INDEX,
-        PLACEHOLDER_SECTION_IDS,
         SECTIONS,
     } from "./omnibox/omniboxSections.js";
+    import OmniboxSectionCarousel from "./omnibox/OmniboxSectionCarousel.svelte";
     import { isUrlLike } from "./omnibox/omniboxShared.js";
-    import OmniboxSectionAppsPanel from "./omnibox/sections/OmniboxSectionAppsPanel.svelte";
-    import OmniboxSectionBookmarks from "./omnibox/sections/OmniboxSectionBookmarks.svelte";
-    import OmniboxSectionHighlights from "./omnibox/sections/OmniboxSectionHighlights.svelte";
-    import OmniboxSectionHistory from "./omnibox/sections/OmniboxSectionHistory.svelte";
-    import OmniboxSectionNewsPanel from "./omnibox/sections/OmniboxSectionNewsPanel.svelte";
-    import OmniboxSectionPlaceholder from "./omnibox/sections/OmniboxSectionPlaceholder.svelte";
-    import OmniboxSectionTabs from "./omnibox/sections/OmniboxSectionTabs.svelte";
-    import OmniboxSectionTrendingPanel from "./omnibox/sections/OmniboxSectionTrendingPanel.svelte";
-    import OmniboxSectionTrack from "./omnibox/OmniboxSectionTrack.svelte";
 
     export let query = "";
     export let activeTabId = null;
@@ -41,22 +32,14 @@
 
     let debouncedQuery = "";
 
-    /** @type {Record<string, import('svelte').SvelteComponent | null>} */
-    let panelRefs = Object.fromEntries(SECTIONS.map((s) => [s.id, null]));
+    /** @type {any} */
+    let carouselRef = null;
 
-    $: activeOmniboxSectionRef = panelRefs[activeSections[0]] ?? null;
+    $: activeOmniboxSectionRef =
+        carouselRef?.getPanelForSection?.(activeSections[0]) ?? null;
 
     const SECTION_SCROLL_THRESHOLD = 50;
     const SEARCH_DEBOUNCE_MS = 120;
-
-    const PLACEHOLDER_MESSAGES = {
-        tasks: "Tasks are not available yet",
-        reading: "Reading is not available yet",
-        shopping: "Shopping is not available yet",
-        learning: "Learning is not available yet",
-        data: "Data are not available yet",
-        files: "Files are not available yet",
-    };
 
     $: showSectionPicker = !query.trim() && !sectionResultsOpen;
     $: showSectionStrip = !showSectionPicker;
@@ -342,117 +325,19 @@
                 class:omnibox-expanded-shell--concealed={showSectionPicker}
             >
                 <div class="results-body results-body--with-track">
-                    <OmniboxSectionTrack
-                        bind:activeIndex={sectionSlideIndex}
-                        slideCount={SECTIONS.length}
-                    >
-                        {#each SECTIONS as section (section.id)}
-                            <div class="omnibox-track-slide">
-                                {#if section.id === "apps"}
-                                    <OmniboxSectionAppsPanel
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                        {sectionResultsOpen}
-                                        on:submit={() => dispatch("submit")}
-                                        on:close={() => dispatch("close")}
-                                    />
-                                {:else if section.id === "tabs"}
-                                    <OmniboxSectionTabs
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                        {windows}
-                                        {activeTabId}
-                                        on:submit={() => dispatch("submit")}
-                                        on:close={() => dispatch("close")}
-                                    />
-                                {:else if section.id === "history"}
-                                    <OmniboxSectionHistory
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                        on:submit={() => dispatch("submit")}
-                                        on:close={() => dispatch("close")}
-                                    />
-                                {:else if section.id === "news"}
-                                    <OmniboxSectionNewsPanel
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                    />
-                                {:else if section.id === "trending"}
-                                    <OmniboxSectionTrendingPanel
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                    />
-                                {:else if section.id === "highlights"}
-                                    <OmniboxSectionHighlights
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                        on:submit={() => dispatch("submit")}
-                                        on:close={() => dispatch("close")}
-                                    />
-                                {:else if section.id === "bookmarks"}
-                                    <OmniboxSectionBookmarks
-                                        bind:this={panelRefs[section.id]}
-                                        dataEnabled={!!visitedSectionIds[section
-                                            .id]}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                        {query}
-                                        {debouncedQuery}
-                                        on:submit={() => dispatch("submit")}
-                                        on:close={() => dispatch("close")}
-                                    />
-                                {:else if PLACEHOLDER_SECTION_IDS.has(section.id)}
-                                    <OmniboxSectionPlaceholder
-                                        bind:this={panelRefs[section.id]}
-                                        sectionId={section.id}
-                                        message={PLACEHOLDER_MESSAGES[
-                                            section.id
-                                        ] || "Not available yet"}
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                    />
-                                {:else}
-                                    <OmniboxSectionPlaceholder
-                                        bind:this={panelRefs[section.id]}
-                                        sectionId={section.id}
-                                        message="Not available yet"
-                                        isActiveSlide={activeSections[0] ===
-                                            section.id}
-                                    />
-                                {/if}
-                            </div>
-                        {/each}
-                    </OmniboxSectionTrack>
+                    <OmniboxSectionCarousel
+                        bind:this={carouselRef}
+                        bind:sectionSlideIndex
+                        {query}
+                        {debouncedQuery}
+                        {sectionResultsOpen}
+                        {windows}
+                        {activeTabId}
+                        activeSectionId={activeSections[0]}
+                        {visitedSectionIds}
+                        on:submit={() => dispatch("submit")}
+                        on:close={() => dispatch("close")}
+                    />
                 </div>
             </div>
 
@@ -467,6 +352,8 @@
 
 <style>
     .omnibox-overlay {
+        --omnibox-track-max-height: 320px;
+
         position: fixed;
         bottom: 20px;
         left: 50%;
@@ -634,37 +521,15 @@
         padding: 0;
     }
 
-    :global(.omnibox-section-track) .omnibox-track-slide {
-        flex: 0 0 100%;
-        width: 100%;
-        scroll-snap-align: start;
-        min-height: 0;
-        max-height: 320px;
-        overflow-x: hidden;
-        overflow-y: auto;
-        padding: 8px 0;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-    }
-
     .results-body {
         flex: 1;
         min-height: 320px;
-        max-height: 320px;
+        max-height: var(--omnibox-track-max-height);
         overflow-x: hidden;
         overflow-y: auto;
         padding: 8px 0;
         display: flex;
         flex-direction: column;
-    }
-
-    .omnibox-track-slide :global(.empty-state) {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 0;
     }
 
     .url-hint {

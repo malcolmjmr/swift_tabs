@@ -57,6 +57,10 @@
     let settingsPageIsOpen = false;
     let helpMenuIsOpen = false;
 
+    let showMoveMenu = false;
+    let showActiveTabAddress = false;
+    let metaShortcutCombo = false;
+
     let isInTabSwitchingMode = false;
     let tabSwitchingDismissTimeout = null;
 
@@ -69,11 +73,13 @@
     $: scrollHorizontalThreshold = settings.scrollHorizontalThreshold ?? 33;
 
     let spaceLongPressTimer = null;
-    let metaLongPressTimer = null;
     let altLongPressTimer = null;
     let ctrlLongPressTimer = null;
+    let nLongPressTimer = null;
     let spaceLongPressFired = false;
     let spaceArm = false;
+    let nLongPressFired = false;
+    let nArm = false;
 
     let currentTab = null;
     let selectedTab = null;
@@ -125,13 +131,6 @@
         }
     }
 
-    function clearMetaLongPressTimer() {
-        if (metaLongPressTimer) {
-            clearTimeout(metaLongPressTimer);
-            metaLongPressTimer = null;
-        }
-    }
-
     function clearAltLongPressTimer() {
         if (altLongPressTimer) {
             clearTimeout(altLongPressTimer);
@@ -146,13 +145,16 @@
         }
     }
 
+    function clearNLongPressTimer() {
+        if (nLongPressTimer) {
+            clearTimeout(nLongPressTimer);
+            nLongPressTimer = null;
+        }
+    }
+
     function saveSettingsPatch(patch) {
         settings = { ...settings, ...patch };
         persistSettings(settings);
-    }
-
-    function tabMenuContextTab() {
-        return isInNavigationMode || isInTriageMode ? selectedTab : currentTab;
     }
 
     function openOmniboxFromShortcut() {
@@ -229,10 +231,12 @@
 
     function handleWindowBlur() {
         clearSpaceLongPressTimer();
-        clearMetaLongPressTimer();
         clearAltLongPressTimer();
         clearCtrlLongPressTimer();
+        clearNLongPressTimer();
         spaceArm = false;
+        nArm = false;
+        nLongPressFired = false;
     }
 
     function sortedOpenWindows() {
@@ -451,6 +455,23 @@
         showActiveTabInfo = false;
     }
 
+    function openMoveMenuFromShortcut() {
+        showMoveMenu = true;
+    }
+
+    function closeMoveMenu() {
+        showMoveMenu = false;
+    }
+
+    function openActiveTabAddressFromShortcut() {
+        showActiveTabInfo = false;
+        showActiveTabAddress = true;
+    }
+
+    function hideActiveTabAddress() {
+        showActiveTabAddress = false;
+    }
+
     function enterTabSwitchingMode() {
         isInTabSwitchingMode = true;
         resetTabSwitchingDismissTimeout();
@@ -469,6 +490,7 @@
         isInNavigationMode = message.isInNavigationMode === true;
         if (!isInNavigationMode) {
             navigationEnteredFromTyping = false;
+            tabMenuIsOpen = false;
         }
         resetNewWindowBatchContext();
         clearPersistentTabSelection();
@@ -489,6 +511,7 @@
             resetTriageGestureState();
             return;
         }
+        tabMenuIsOpen = false;
         resetNewWindowBatchContext();
         clearPersistentTabSelection();
         await tabStore.refreshState();
@@ -590,7 +613,9 @@
             tabMenuIsOpen ||
             omniboxIsOpen ||
             systemMenuIsOpen ||
-            settingsPageIsOpen
+            settingsPageIsOpen ||
+            showMoveMenu ||
+            showActiveTabAddress
         ) {
             return;
         }
@@ -709,6 +734,8 @@
             systemMenuIsOpen = false;
             settingsPageIsOpen = false;
             helpMenuIsOpen = false;
+            showMoveMenu = false;
+            showActiveTabAddress = false;
             linkMenuHostRef?.dismissAll();
         }
     }
@@ -723,6 +750,8 @@
             !systemMenuIsOpen &&
             !settingsPageIsOpen &&
             !helpMenuIsOpen &&
+            !showMoveMenu &&
+            !showActiveTabAddress &&
             !linkMenuHostRef?.anyLinkOverlayOpen?.()
         );
     }
@@ -966,11 +995,38 @@
             return;
         }
 
-        if (
-            (event.key === "Meta" || event.key === "OS") &&
-            metaLongPressTimer
-        ) {
-            clearMetaLongPressTimer();
+        const isN = event.key === "n" || event.key === "N";
+        if (isN && nArm) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            nArm = false;
+            clearNLongPressTimer();
+            if (nLongPressFired) {
+                nLongPressFired = false;
+                return;
+            }
+            openOmniboxFromShortcut();
+            return;
+        }
+
+        if (event.key === "Meta" || event.key === "OS") {
+            if (
+                isInNavigationMode &&
+                !isInTriageMode &&
+                !isInTypingContext() &&
+                !metaShortcutCombo &&
+                !omniboxIsOpen &&
+                !helpMenuIsOpen &&
+                !systemMenuIsOpen &&
+                !settingsPageIsOpen &&
+                !showMoveMenu &&
+                !showActiveTabAddress &&
+                (selectedTab ?? currentTab)
+            ) {
+                tabMenuIsOpen = !tabMenuIsOpen;
+            }
+            metaShortcutCombo = false;
         }
         if (event.key === "Alt" && altLongPressTimer) {
             clearAltLongPressTimer();
@@ -984,19 +1040,18 @@
         return {
             getSpaceLongPressTimer: () => spaceLongPressTimer,
             clearSpaceLongPressTimer,
-            getMetaLongPressTimer: () => metaLongPressTimer,
-            clearMetaLongPressTimer,
             getAltLongPressTimer: () => altLongPressTimer,
             clearAltLongPressTimer,
             getCtrlLongPressTimer: () => ctrlLongPressTimer,
             clearCtrlLongPressTimer,
+            getNLongPressTimer: () => nLongPressTimer,
+            clearNLongPressTimer,
             isIdleForGlobalTabActions,
             omniboxIsOpen,
             tabMenuIsOpen,
             helpMenuIsOpen,
             systemMenuIsOpen,
             settingsPageIsOpen,
-            tabMenuContextTab,
             longPressThreshold,
             setHelpMenuIsOpen: (v) => {
                 helpMenuIsOpen = v;
@@ -1014,15 +1069,30 @@
             setSettingsPageIsOpen: (v) => {
                 settingsPageIsOpen = v;
             },
-            setMetaLongPressTimer: (v) => {
-                metaLongPressTimer = v;
-            },
             setAltLongPressTimer: (v) => {
                 altLongPressTimer = v;
             },
             setCtrlLongPressTimer: (v) => {
                 ctrlLongPressTimer = v;
             },
+            setNLongPressTimer: (v) => {
+                nLongPressTimer = v;
+            },
+            setNLongPressFired: (v) => {
+                nLongPressFired = v;
+            },
+            setNArm: (v) => {
+                nArm = v;
+            },
+            setMetaShortcutCombo: (v) => {
+                metaShortcutCombo = v;
+            },
+            getMoveMenuOpen: () => showMoveMenu,
+            getShowActiveTabAddress: () => showActiveTabAddress,
+            openMoveMenuFromShortcut,
+            openActiveTabAddressFromShortcut,
+            closeMoveMenu,
+            hideActiveTabAddress,
             getHelpMenuIsOpen: () => helpMenuIsOpen,
             getTabMenuIsOpen: () => tabMenuIsOpen,
             getOmniboxIsOpen: () => omniboxIsOpen,
@@ -1151,9 +1221,10 @@
     $: triageCanScrollDown =
         triageActiveIndex >= 0 && triageActiveIndex < triageTabList.length - 1;
     $: showActiveInfoLayer =
-        (showActiveTabInfo || tabMenuIsOpen) &&
+        showActiveTabInfo &&
         activeInfoTab &&
-        !isInTriageMode;
+        !isInTriageMode &&
+        !showActiveTabAddress;
 
     onMount(async () => {
         console.log("App mounted");
@@ -1180,9 +1251,9 @@
         document.removeEventListener("click", handleDocumentClick);
         window.removeEventListener("blur", handleWindowBlur);
         clearSpaceLongPressTimer();
-        clearMetaLongPressTimer();
         clearAltLongPressTimer();
         clearCtrlLongPressTimer();
+        clearNLongPressTimer();
         resetTriageGestureState();
         chromeUnsub();
     });
@@ -1207,6 +1278,8 @@
     {helpMenuIsOpen}
     {systemMenuIsOpen}
     {settingsPageIsOpen}
+    moveMenuIsOpen={showMoveMenu}
+    activeTabAddressOpen={showActiveTabAddress}
 />
 
 <AppOverlays
@@ -1239,6 +1312,9 @@
     {triageCanScrollUp}
     {triageCanScrollDown}
     onTriagePointerGestureStart={handleTriagePointerGestureStart}
+    bind:showMoveMenu
+    bind:showActiveTabAddress
+    refreshAfterTabEdit={fetchTabInfo}
 />
 
 <style>

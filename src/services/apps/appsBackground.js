@@ -14,6 +14,47 @@ import {
     parseLayout,
 } from "./appsModel.js";
 
+/**
+ * Registered apps whose domains appear in Chrome history, ordered by most recent visit.
+ *
+ * @param {number} limit
+ * @returns {Promise<import('./appsModel.js').AppRecord[]>}
+ */
+export async function appsRecentFromBrowserHistory(limit = 9) {
+    const apps = await appsListAll();
+    if (apps.length === 0 || !chrome.history?.search) return [];
+
+    /** @type {Map<string, import('./appsModel.js').AppRecord>} */
+    const domainToApp = new Map();
+    for (const a of apps) {
+        const d = normalizeDomain(a.domain);
+        if (d) domainToApp.set(d, a);
+    }
+    if (domainToApp.size === 0) return [];
+
+    const threeMonthsAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+    const history = await chrome.history.search({
+        text: "",
+        startTime: threeMonthsAgo,
+        maxResults: 8000,
+    });
+
+    /** @type {Map<string, number>} */
+    const domainLastVisit = new Map();
+    for (const h of history) {
+        const d = normalizeDomain(extractDomain(h.url));
+        if (!d || !domainToApp.has(d)) continue;
+        const prev = domainLastVisit.get(d) || 0;
+        if (h.lastVisitTime > prev) domainLastVisit.set(d, h.lastVisitTime);
+    }
+
+    return [...domainLastVisit.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([d]) => domainToApp.get(d))
+        .filter(Boolean);
+}
+
 const COLLECTION = "apps";
 
 /**
@@ -26,10 +67,34 @@ export async function appsGetLayout() {
 }
 
 /**
+ * Remove folders whose items array is empty after pruning children.
+ *
+ * @param {import('./appsModel.js').LayoutItem[]} items
+ * @returns {import('./appsModel.js').LayoutItem[]}
+ */
+export function pruneEmptyFolders(items) {
+    if (!Array.isArray(items)) return [];
+    const out = [];
+    for (const it of items) {
+        if (it.kind === "folder") {
+            const inner = pruneEmptyFolders(it.items || []);
+            if (inner.length === 0) continue;
+            out.push({ ...it, items: inner });
+        } else {
+            out.push(it);
+        }
+    }
+    return out;
+}
+
+/**
  * @param {import('./appsModel.js').AppHomeLayout} layout
  */
 export async function appsPutLayout(layout) {
-    await chrome.storage.local.set({ [APP_HOME_LAYOUT_KEY]: layout });
+    const items = pruneEmptyFolders(layout.items || []);
+    await chrome.storage.local.set({
+        [APP_HOME_LAYOUT_KEY]: { ...layout, items },
+    });
 }
 
 /**
@@ -252,6 +317,20 @@ export async function appsMoveAppIntoFolder(appId, intoFolderId) {
 }
 
 /**
+ * Remove app from anywhere in the layout, then append it to the home root.
+ *
+ * @param {string} appId
+ */
+export async function appsMoveAppToHomeRoot(appId) {
+    const layout = await appsGetLayout();
+    const items = removeAppRef(layout.items, appId);
+    await appsPutLayout({
+        ...layout,
+        items: [...items, { kind: "app", appId }],
+    });
+}
+
+/**
  * @param {import('./appsModel.js').LayoutItem[]} items
  * @param {string} appId
  */
@@ -322,6 +401,10 @@ export async function appsMergeIntoFolder(appIdA, appIdB, title = "Folder") {
  */
 export async function appsGetState() {
     await appsSeedFromFavoritesIfEmpty();
-    const [apps, layout] = await Promise.all([appsListAll(), appsGetLayout()]);
-    return { apps, layout };
+    const [apps, layout, recentHistoryPreview] = await Promise.all([
+        appsListAll(),
+        appsGetLayout(),
+        appsRecentFromBrowserHistory(9),
+    ]);
+    return { apps, layout, recentHistoryPreview };
 }

@@ -13,7 +13,7 @@
 
     let resultsListEl;
     /** @type {object[]} */
-    let recentHistoryCache = [];
+    let downloadsCache = [];
     let loading = false;
     let loadStarted = false;
     let selectedResultIndex = 0;
@@ -24,16 +24,23 @@
 
     $: if (dataEnabled && !loadStarted) {
         loadStarted = true;
-        void loadHistory();
+        void loadDownloads();
     }
 
-    async function loadHistory() {
+    /** @param {string} path */
+    function fileBasename(path) {
+        if (!path) return "";
+        const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+        return i >= 0 ? path.slice(i + 1) : path;
+    }
+
+    async function loadDownloads() {
         loading = true;
         try {
-            const history = await chromeService
-                .getRecentHistory()
+            const list = await chromeService
+                .getRecentDownloads()
                 .catch(() => []);
-            recentHistoryCache = Array.isArray(history) ? history : [];
+            downloadsCache = Array.isArray(list) ? list : [];
         } finally {
             loading = false;
         }
@@ -42,22 +49,29 @@
     $: q = debouncedQuery.trim().toLowerCase();
     $: debouncedQuery, (selectedResultIndex = 0);
     $: visibleResults =
-        dataEnabled && recentHistoryCache.length > 0 ? filterHistory(q) : [];
+        dataEnabled && downloadsCache.length > 0 ? filterDownloads(q) : [];
     $: {
         const max = Math.max(0, visibleResults.length - 1);
         if (selectedResultIndex > max) selectedResultIndex = max;
     }
 
     /** @param {string} q */
-    function filterHistory(q) {
+    function filterDownloads(q) {
         const list = !q
-            ? recentHistoryCache
-            : recentHistoryCache.filter(
-                  (h) =>
-                      (h.title || "").toLowerCase().includes(q) ||
-                      (h.url || "").toLowerCase().includes(q),
-              );
-        return list.map((h) => ({ ...h, type: "history" }));
+            ? downloadsCache
+            : downloadsCache.filter((d) => {
+                  const name = fileBasename(d.filename || "").toLowerCase();
+                  const url = (d.url || "").toLowerCase();
+                  const path = (d.filename || "").toLowerCase();
+                  return (
+                      name.includes(q) || url.includes(q) || path.includes(q)
+                  );
+              });
+        return list.map((d) => ({
+            ...d,
+            type: "download",
+            title: fileBasename(d.filename) || d.url || "Download",
+        }));
     }
 
     function markResultFaviconFailed(item) {
@@ -81,11 +95,15 @@
 
     async function activateSelected() {
         const item = visibleResults[selectedResultIndex];
-        if (!item) {
+        if (item == null || item.id == null) {
             dispatch("close");
             return;
         }
-        await chromeService.createTab({ url: item.url, active: true });
+        try {
+            await chromeService.openDownload(item.id);
+        } catch {
+            /* background falls back to show in folder */
+        }
         dispatch("submit");
         dispatch("close");
     }
@@ -132,42 +150,34 @@
     }
 </script>
 
-<div class="omnibox-section-history">
-    {#if loading && recentHistoryCache.length === 0}
-        <div class="empty-state">Loading…</div>
-    {:else if visibleResults.length === 0}
-        <div class="empty-state">
-            {q ? `No history matches '${query.trim()}'` : "No recent history"}
-        </div>
-    {:else}
-        <div bind:this={resultsListEl} class="results-list" role="listbox">
-            <OmniboxSectionResultList
-                {visibleResults}
-                {selectedResultIndex}
-                {appsEditMode}
-                {faviconFailedByKey}
-                onFaviconError={markResultFaviconFailed}
-                onRowClick={onResultRowClick}
-                onRowDblClick={onResultRowDblClick}
-                onAppsDragStart={() => {}}
-                onAppsDragOver={() => {}}
-                onAppsDrop={() => {}}
-            />
-        </div>
-    {/if}
-</div>
+{#if loading && downloadsCache.length === 0}
+    <div class="empty-state">Loading…</div>
+{:else if visibleResults.length === 0}
+    <div class="empty-state">
+        {q
+            ? `No downloads match '${query.trim()}'`
+            : "No files in Downloads (or files were removed)"}
+    </div>
+{:else}
+    <div bind:this={resultsListEl} class="results-list" role="listbox">
+        <OmniboxSectionResultList
+            {visibleResults}
+            {selectedResultIndex}
+            {appsEditMode}
+            {faviconFailedByKey}
+            onFaviconError={markResultFaviconFailed}
+            onRowClick={onResultRowClick}
+            onRowDblClick={onResultRowDblClick}
+            onAppsDragStart={() => {}}
+            onAppsDragOver={() => {}}
+            onAppsDrop={() => {}}
+        />
+    </div>
+{/if}
 
 <style>
-    .omnibox-section-history {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        border-radius: 10px;
-        margin-bottom: 16px;
-        overflow: scroll;
-    }
-
     .empty-state {
+        padding: 24px 16px;
         color: var(--st-text-muted, #888);
         font-size: 14px;
         text-align: center;

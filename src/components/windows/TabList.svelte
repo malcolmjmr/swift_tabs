@@ -1,7 +1,7 @@
 <script>
     import TabListItem from "./TabListItem.svelte";
     import { createEventDispatcher } from "svelte";
-    import MoveMenu from "../menus/MoveMenu.svelte";
+    import MoveMenu from "../menu/MoveMenu.svelte";
     import { windows as windowsStore, tabStore } from "../../stores/tabStore";
 
     export let isExpanded = false;
@@ -130,9 +130,14 @@
 
 {#if showMoveMenu}
     <MoveMenu
+        tab={selectedTab}
         windows={$windowsStore}
         on:close={closeMoveMenu}
-        on:moveTab={(e) => moveSelectedTab(e.detail.windowId)}
+        on:moveToWindow={(e) => moveSelectedTab(e.detail.windowId)}
+        on:moved={async () => {
+            await tabStore.refreshState();
+            closeMoveMenu();
+        }}
     />
 {/if}
 

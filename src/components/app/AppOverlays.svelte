@@ -1,5 +1,5 @@
 <script>
-    import { fade, fly } from "svelte/transition";
+    import { fade } from "svelte/transition";
     import TabSwitchingModal from "../TabSwitchingModal.svelte";
     import TabMenu from "../tab/TabMenu.svelte";
     import SystemMenu from "../SystemMenu.svelte";
@@ -9,6 +9,9 @@
     import TriageModeOverlay from "./TriageModeOverlay.svelte";
     import HelpMenu from "../HelpMenu.svelte";
     import SettingsPage from "../SettingsPage.svelte";
+    import MoveMenu from "../menu/MoveMenu.svelte";
+    import ActiveTabAddress from "../tab/ActiveTabAddress.svelte";
+    import { tabStore } from "../../stores/tabStore.js";
     /** @type {(tab: chrome.tabs.Tab) => void | Promise<void>} */
     export let onNavActivateTab = async () => {};
 
@@ -43,13 +46,69 @@
     export let triageCanScrollDown = false;
     /** @param {CustomEvent<PointerEvent>} e */
     export let onTriagePointerGestureStart = () => {};
+
+    export let showMoveMenu = false;
+    export let showActiveTabAddress = false;
+    /** @type {() => void | Promise<void>} */
+    export let refreshAfterTabEdit = async () => {};
+
+    $: moveAddressTab =
+        isInNavigationMode || isInTriageMode ? selectedTab : currentTab;
+
+    async function handleMoveToWindow(/** @type {CustomEvent} */ e) {
+        const t = moveAddressTab;
+        if (!t?.id) return;
+        await tabStore.moveTab(t.id, e.detail.windowId);
+        showMoveMenu = false;
+        await tabStore.refreshState();
+    }
+
+    async function handleMoveMenuMoved() {
+        await tabStore.refreshState();
+    }
+
+    /** Tabs strip visible in nav mode (hidden when omnibox is the sole overlay). */
+    $: navTabsStripVisible =
+        isInNavigationMode && !(omniboxOpenedStandalone && omniboxIsOpen);
+
+    /** Full tab menu: only in navigation mode; docked beside TabsView when strip visible. */
+    $: tabMenuTab = selectedTab ?? currentTab;
+    $: tabMenuDocked = tabMenuIsOpen && navTabsStripVisible;
+    $: tabMenuStandalone =
+        isInNavigationMode && tabMenuIsOpen && !navTabsStripVisible;
 </script>
 
-{#if tabMenuIsOpen}
+{#if tabMenuStandalone}
     <TabMenu
-        tab={isInNavigationMode || isInTriageMode ? selectedTab : currentTab}
+        tab={tabMenuTab}
+        docked={false}
+        scrollVerticalThreshold={settings?.scrollVerticalThreshold ?? 33}
         onClose={() => {
             tabMenuIsOpen = false;
+        }}
+    />
+{/if}
+{#if showMoveMenu}
+    <MoveMenu
+        tab={moveAddressTab}
+        windows={windowsList}
+        on:close={() => {
+            showMoveMenu = false;
+        }}
+        on:moveToWindow={handleMoveToWindow}
+        on:moved={handleMoveMenuMoved}
+    />
+{/if}
+{#if showActiveTabAddress && moveAddressTab}
+    <ActiveTabAddress
+        tab={moveAddressTab}
+        on:close={() => {
+            showActiveTabAddress = false;
+        }}
+        on:committed={async () => {
+            await tabStore.refreshState();
+            await refreshAfterTabEdit();
+            showActiveTabAddress = false;
         }}
     />
 {/if}
@@ -65,7 +124,7 @@
 {/if}
 {#if systemMenuIsOpen}
     <SystemMenu />
-{:else if isInTriageMode && !tabMenuIsOpen}
+{:else if isInTriageMode}
     {#if !(omniboxOpenedStandalone && omniboxIsOpen)}
         <TriageModeOverlay
             tab={activeInfoTab}
@@ -73,9 +132,6 @@
             canScrollUp={triageCanScrollUp}
             canScrollDown={triageCanScrollDown}
             on:pointergesturestart={(e) => onTriagePointerGestureStart(e)}
-            on:menuRequest={() => {
-                tabMenuIsOpen = true;
-            }}
         />
     {/if}
     {#if omniboxIsOpen}
@@ -90,24 +146,38 @@
             }}
         />
     {/if}
-{:else if isInNavigationMode && !tabMenuIsOpen}
-    {#if !(omniboxOpenedStandalone && omniboxIsOpen)}
-        <TabsView
-            bind:this={tabsViewRef}
-            includeEdgeSlides={true}
-            windows={windowsList}
-            {multiSelectedIds}
-            bind:currentTab
-            bind:selectedTab
-            bind:slideIndex={navSlideIndex}
-            bind:viewMode={navViewMode}
-            bind:overviewFocusedWindowIndex
-            on:activatetab={async (e) => {
-                const tab = e.detail?.tab;
-                if (!tab?.id) return;
-                await onNavActivateTab(tab);
-            }}
-        />
+{:else if isInNavigationMode}
+    {#if navTabsStripVisible}
+        <div class="nav-mode-tabs-dock">
+            <TabsView
+                bind:this={tabsViewRef}
+                embedInNavDock={true}
+                includeEdgeSlides={true}
+                windows={windowsList}
+                {multiSelectedIds}
+                bind:currentTab
+                bind:selectedTab
+                bind:slideIndex={navSlideIndex}
+                bind:viewMode={navViewMode}
+                bind:overviewFocusedWindowIndex
+                on:activatetab={async (e) => {
+                    const tab = e.detail?.tab;
+                    if (!tab?.id) return;
+                    await onNavActivateTab(tab);
+                }}
+            />
+            {#if tabMenuIsOpen}
+                <TabMenu
+                    tab={tabMenuTab}
+                    docked={true}
+                    scrollVerticalThreshold={settings?.scrollVerticalThreshold ??
+                        33}
+                    onClose={() => {
+                        tabMenuIsOpen = false;
+                    }}
+                />
+            {/if}
+        </div>
     {/if}
     {#if omniboxIsOpen}
         <Omnibox
@@ -123,11 +193,23 @@
     {/if}
 {:else if (showActiveInfoLayer && activeInfoTab) || isInTabSwitchingMode}
     <div in:fade={{ duration: 150 }} out:fade={{ duration: 200 }}>
-        <ActiveTabInfo
-            tab={activeInfoTab}
-            on:menuRequest={() => {
-                tabMenuIsOpen = true;
-            }}
-        />
+        <ActiveTabInfo tab={activeInfoTab} />
     </div>
 {/if}
+
+<style>
+    .nav-mode-tabs-dock {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 999990;
+        display: flex;
+        flex-direction: row-reverse;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        align-items: stretch;
+        gap: 10px;
+        max-width: calc(100vw - 40px);
+        box-sizing: border-box;
+    }
+</style>

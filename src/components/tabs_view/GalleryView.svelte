@@ -69,6 +69,11 @@
                 </div>
                 <div class="gallery-view-item-title">{tab.title}</div>
                 <div class="gallery-view-item-url">{hostname(tab.url)}</div>
+                {#if selectedTab?.id === tab.id || multiSelectedIds.includes(tab.id)}
+                    <span class="gallery-cmd-hint" title="Command menu"
+                        >⌘</span
+                    >
+                {/if}
             </div>
         {/each}
     </div>
@@ -92,12 +97,14 @@
     }
 
     .gallery-view-item {
+        position: relative;
         display: flex;
         flex-wrap: wrap;
         align-items: flex-start;
         justify-content: flex-start;
         gap: 8px;
         padding: 10px;
+        padding-right: 22px;
         border-radius: 8px;
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
         transition:
@@ -171,5 +178,17 @@
     .gallery-view-item-url {
         font-size: 12px;
         color: var(--st-text-muted, #808080);
+    }
+
+    .gallery-cmd-hint {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        font-size: 17px;
+        line-height: 1;
+        font-weight: 600;
+        color: var(--st-text-muted, #888);
+        opacity: 0.85;
+        user-select: none;
     }
 </style>

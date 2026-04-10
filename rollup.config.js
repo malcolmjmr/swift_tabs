@@ -137,6 +137,38 @@ export default [
         }
     },
     {
+        input: 'src/newtab.js',
+        output: {
+            sourcemap: !production,
+            format: 'iife',
+            name: 'swiftTabsNewTab',
+            file: 'dist/newtab.js'
+        },
+        plugins: [
+            svelte({
+                compilerOptions: {
+                    dev: !production
+                }
+            }),
+
+            css({ output: 'newtab.css' }),
+
+            resolve({
+                browser: true,
+                dedupe: ['svelte']
+            }),
+
+            commonjs(),
+
+            image(),
+
+            production && terser()
+        ],
+        watch: {
+            clearScreen: false
+        }
+    },
+    {
         input: 'src/demo/main.js',
         output: {
             sourcemap: !production,

@@ -284,7 +284,7 @@ export const chromeService = {
             id: newId,
             focused: false,
             state: "normal",
-            type: "normal",
+            type: options.asPopup === true ? "popup" : "normal",
             incognito: false,
             tabs: [],
         };
@@ -329,6 +329,22 @@ export const chromeService = {
     async copyTabUrl(tabId) {
         const ent = findTabEntry(tabId);
         return { url: ent?.tab?.url ?? "" };
+    },
+
+    /**
+     * @param {number} tabId
+     * @param {string} url
+     */
+    async updateTabUrl(tabId, url) {
+        const ent = findTabEntry(tabId);
+        if (!ent?.tab) return null;
+        ent.tab.url = url.trim();
+        return { ...ent.tab };
+    },
+
+    /** @param {number} _tabId @param {number} _groupId */
+    async addTabToGroup(_tabId, _groupId) {
+        return { success: true };
     },
 
     /** @param {number} tabId */
@@ -429,6 +445,18 @@ export const chromeService = {
         return [];
     },
 
+    async getRecentDownloads() {
+        return [];
+    },
+
+    async openDownload() {
+        return { success: true };
+    },
+
+    async getReadingList() {
+        return [];
+    },
+
     async getBookmarksBar() {
         return [];
     },
@@ -438,7 +466,7 @@ export const chromeService = {
     },
 
     async appsGetState() {
-        return { apps: [], layout: emptyLayout() };
+        return { apps: [], layout: emptyLayout(), recentHistoryPreview: [] };
     },
 
     async appsPutLayout() {
@@ -458,6 +486,14 @@ export const chromeService = {
     },
 
     async appsMergeIntoFolder() {
+        return { ok: true };
+    },
+
+    async appsMoveAppIntoFolder() {
+        return { ok: true };
+    },
+
+    async appsMoveAppToHomeRoot() {
         return { ok: true };
     },
 

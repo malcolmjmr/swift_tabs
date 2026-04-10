@@ -1,225 +1,266 @@
 <script>
     /**
-     * Tab Menu — Notion-style command menu.
-     * Search field at top, flat list of actions with Material icons.
-     * Keeps Active Tab Info visible; no redundant tab header.
+     * Tab menu: single wrapped list of items; section labels break rows; some items open submenus.
      */
     import { onMount, onDestroy } from "svelte";
-    import { fly } from "svelte/transition";
     import { scale } from "svelte/transition";
-    import { chromeService } from "../../services/chromeApi";
+    import { recentActionsStore } from "../../stores/recentActionsStore";
     import {
-        recentActionsStore,
-        recentActions,
-    } from "../../stores/recentActionsStore";
+        TAB_MENU_SECTIONS as SECTIONS,
+        runTabMenuAction,
+    } from "./tabMenuActions.js";
+    import {
+        registerTabMenuWheelSelect,
+        unregisterTabMenuWheelSelect,
+    } from "../../app/gestures/tabNavigationScroll.js";
 
     export let tab = null;
     export let onClose = () => {};
+    export let docked = true;
+    /** Same threshold as navigation-mode tab list (settings.scrollVerticalThreshold). */
+    export let scrollVerticalThreshold = 33;
+
+    const QUICK_ID = "quick";
 
     let searchQuery = "";
     let selectedIndex = 0;
     let listEl = null;
     let scrollSelectDelta = 0;
-    const SCROLL_SELECT_THRESHOLD = 25;
 
-    // Section 1: Quick actions
-    const QUICK_ACTIONS = [
-        { id: "pin", icon: "push_pin", label: "Pin" },
-        { id: "reload", icon: "refresh", label: "Reload" },
-        { id: "duplicate", icon: "content_copy", label: "Duplicate" },
-        { id: "copy", icon: "link", label: "Copy URL" },
-        { id: "sleep", icon: "sleep", label: "Sleep" },
-        { id: "find", icon: "find_in_page", label: "Find" },
-    ];
+    /** @type {"root" | "submenu"} */
+    let menuPanel = "root";
+    /** @type {string | null} */
+    let openSectionId = null;
 
-    // Section 2: Save to
-    const SAVE_TO_ACTIONS = [
-        { id: "save_favorite_apps", icon: "stars", label: "Favorite apps" },
-        { id: "save_bookmarks", icon: "bookmark", label: "Bookmarks" },
-        { id: "save_database", icon: "database", label: "Database" },
-        { id: "save_tasks", icon: "task_alt", label: "Tasks" },
-    ];
+    $: searchTrim = searchQuery.trim();
 
-    // Section 3: Move to
-    const MOVE_TO_ACTIONS = [
-        { id: "move_popup", icon: "open_in_new", label: "Popup" },
-        { id: "move_window", icon: "web", label: "Window" },
-        { id: "move_group", icon: "folder", label: "Group" },
-        { id: "move_reading_list", icon: "menu_book", label: "Reading list" },
-        { id: "move_bookmarks", icon: "bookmark", label: "Bookmarks" },
-        { id: "move_database", icon: "database", label: "Database" },
-        { id: "move_task", icon: "task_alt", label: "Task" },
-        { id: "move_time", icon: "schedule", label: "Time" },
-    ];
-
-    // Section 4: Appearance
-    const APPEARANCE_ACTIONS = [
-        { id: "zoom", icon: "zoom_in", label: "Zoom" },
-        { id: "font_size", icon: "format_size", label: "Font size" },
-        { id: "dark_mode", icon: "dark_mode", label: "Dark mode" },
-        { id: "reader_mode", icon: "auto_stories", label: "Reader mode" },
-        { id: "hide_elements", icon: "visibility_off", label: "Hide elements" },
-    ];
-
-    // Section 5: Custom actions (empty state)
-    const CUSTOM_ACTIONS = []; // User-defined, empty by default
-
-    // Section 6: Close actions
-    const CLOSE_ACTIONS = [
-        { id: "close", icon: "close", label: "Close" },
-        {
-            id: "close_others",
-            icon: "remove_circle_outline",
-            label: "Close others",
-        },
-        {
-            id: "close_to_right",
-            icon: "keyboard_double_arrow_right",
-            label: "Close to the right",
-        },
-    ];
-
-    const SECTIONS = [
-        { id: "quick", label: null, items: QUICK_ACTIONS },
-        { id: "save", label: "Save to", items: SAVE_TO_ACTIONS },
-        { id: "move", label: "Move to", items: MOVE_TO_ACTIONS },
-        { id: "appearance", label: "Appearance", items: APPEARANCE_ACTIONS },
-        { id: "custom", label: "Custom actions", items: CUSTOM_ACTIONS },
-        { id: "close", label: "Close", items: CLOSE_ACTIONS },
-    ];
-
-    function filterItems(items, query) {
-        if (!query.trim()) return items;
-        const q = query.toLowerCase();
-        return items.filter((i) => i.label.toLowerCase().includes(q));
+    $: if (searchTrim.length > 0) {
+        openSectionId = null;
+        menuPanel = "root";
     }
 
-    $: flattenedList = (() => {
-        const list = [];
-        SECTIONS.forEach((section) => {
-            const filtered = filterItems(section.items, searchQuery);
-            if (filtered.length > 0 || section.id === "custom") {
-                if (section.label)
-                    list.push({ type: "header", label: section.label });
-                if (section.id === "custom") {
-                    list.push({ type: "create_action", id: "create_action" });
-                } else {
-                    filtered.forEach((item) => {
-                        list.push({
-                            type: "action",
-                            sectionId: section.id,
-                            data: item,
-                        });
+    function sectionById(id) {
+        return SECTIONS.find((s) => s.id === id) ?? null;
+    }
+
+    function openSubmenu(sectionId) {
+        menuPanel = "submenu";
+        openSectionId = sectionId;
+        selectedIndex = 0;
+        scrollSelectDelta = 0;
+    }
+
+    function closeSubmenu() {
+        menuPanel = "root";
+        openSectionId = null;
+        selectedIndex = 0;
+        scrollSelectDelta = 0;
+    }
+
+    /**
+     * @returns {Array<
+     *   | { type: "section_head"; label: string }
+     *   | { type: "cell"; cell: object; selectableIndex: number }
+     * >}
+     */
+    function buildSearchNodes(q) {
+        const qLower = q.toLowerCase();
+        const match = (label) => label.toLowerCase().includes(qLower);
+        const nodes = [{ type: "section_head", label: "Results" }];
+        let si = 0;
+        const pushCell = (cell) => {
+            nodes.push({ type: "cell", cell, selectableIndex: si++ });
+        };
+        for (const section of SECTIONS) {
+            if (section.id === "custom") {
+                if (match("create") || match("action") || match("custom")) {
+                    pushCell({
+                        type: "create_action",
+                        sectionId: "custom",
+                    });
+                }
+                continue;
+            }
+            for (const item of section.items) {
+                if (match(item.label)) {
+                    pushCell({
+                        type: "action",
+                        sectionId: section.id,
+                        data: item,
                     });
                 }
             }
-        });
+        }
+        return nodes;
+    }
+
+    function buildRootNodes() {
+        const nodes = [];
+        let si = 0;
+        const pushCell = (cell) => {
+            nodes.push({ type: "cell", cell, selectableIndex: si++ });
+        };
+        const quick = sectionById(QUICK_ID);
+        if (quick?.items?.length) {
+            nodes.push({ type: "section_head", label: "Quick" });
+            for (const item of quick.items) {
+                pushCell({
+                    type: "action",
+                    sectionId: quick.id,
+                    data: item,
+                });
+            }
+        }
+        for (const section of SECTIONS) {
+            if (section.id === QUICK_ID) continue;
+            const label = section.label ?? section.id;
+            const hasItems =
+                section.items.length > 0 || section.id === "custom";
+            if (!hasItems) continue;
+            pushCell({
+                type: "section_nav",
+                sectionId: section.id,
+                label,
+            });
+        }
+        return nodes;
+    }
+
+    function buildSubmenuNodes(sectionId) {
+        const nodes = [];
+        let si = 0;
+        const pushCell = (cell) => {
+            nodes.push({ type: "cell", cell, selectableIndex: si++ });
+        };
+        const section = sectionById(sectionId);
+        if (!section) {
+            pushCell({ type: "back" });
+            return nodes;
+        }
+        const title = section.label ?? section.id;
+        pushCell({ type: "back" });
+        nodes.push({ type: "section_head", label: title });
+        if (section.id === "custom") {
+            pushCell({ type: "create_action", sectionId: "custom" });
+        } else {
+            for (const item of section.items) {
+                pushCell({
+                    type: "action",
+                    sectionId: section.id,
+                    data: item,
+                });
+            }
+        }
+        return nodes;
+    }
+
+    $: viewNodes =
+        searchTrim.length > 0
+            ? buildSearchNodes(searchTrim)
+            : menuPanel === "submenu" && openSectionId
+              ? buildSubmenuNodes(openSectionId)
+              : buildRootNodes();
+
+    $: selectableList = (() => {
+        const list = [];
+        for (const node of viewNodes) {
+            if (node.type !== "cell") continue;
+            const cell = node.cell;
+            if (
+                cell.type === "action" ||
+                cell.type === "create_action" ||
+                cell.type === "section_nav" ||
+                cell.type === "back"
+            ) {
+                list.push(cell);
+            }
+        }
         return list;
     })();
 
-    $: selectableList = flattenedList.filter(
-        (i) => i.type === "action" || i.type === "create_action",
-    );
-    $: flattenedListWithIndex = (() => {
-        let idx = 0;
-        return flattenedList.map((item) => {
-            const isSelectable =
-                item.type === "action" || item.type === "create_action";
-            const selectableIdx = isSelectable ? idx++ : -1;
-            return { item, selectableIdx };
-        });
-    })();
     $: clampedIndex =
         selectableList.length === 0
             ? -1
             : Math.min(Math.max(0, selectedIndex), selectableList.length - 1);
-    $: selectedItem = clampedIndex >= 0 ? selectableList[clampedIndex] : null;
+    $: selectedCell = clampedIndex >= 0 ? selectableList[clampedIndex] : null;
+
+    function cellKey(cell, i) {
+        if (cell.type === "action")
+            return `a-${cell.sectionId}-${cell.data.id}-${i}`;
+        if (cell.type === "create_action") return `c-${i}`;
+        if (cell.type === "section_nav") return `n-${cell.sectionId}-${i}`;
+        if (cell.type === "back") return `b-${i}`;
+        return `x-${i}`;
+    }
+
+    function nodeKey(node, i) {
+        if (node.type === "section_head") return `h-${node.label}-${i}`;
+        return cellKey(node.cell, i);
+    }
+
+    function isCellSelected(cell) {
+        if (!selectedCell || !cell) return false;
+        if (cell.type !== selectedCell.type) return false;
+        if (cell.type === "action") {
+            return (
+                cell.sectionId === selectedCell.sectionId &&
+                cell.data?.id === selectedCell.data?.id
+            );
+        }
+        if (cell.type === "section_nav") {
+            return cell.sectionId === selectedCell.sectionId;
+        }
+        return true;
+    }
 
     onMount(() => {
         recentActionsStore.init();
-        window.addEventListener("wheel", handleWheel, {
-            passive: false,
-            capture: true,
-        });
+        registerTabMenuWheelSelect(handleScrollSelect);
     });
 
     onDestroy(() => {
-        window.removeEventListener("wheel", handleWheel, { capture: true });
+        unregisterTabMenuWheelSelect();
     });
 
     function scrollSelectedIntoView() {
-        if (listEl) {
-            const item = listEl.querySelector(
+        if (listEl && clampedIndex >= 0) {
+            const el = listEl.querySelector(
                 `[data-selectable-index="${clampedIndex}"]`,
             );
-            item?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
         }
     }
 
-    function handleScrollSelect(delta) {
+    function handleScrollSelect(deltaPx) {
         if (selectableList.length === 0) return;
-        scrollSelectDelta += delta;
-        if (Math.abs(scrollSelectDelta) >= SCROLL_SELECT_THRESHOLD) {
-            const step = scrollSelectDelta > 0 ? -1 : 1;
-            scrollSelectDelta = 0;
-            selectedIndex = Math.max(
-                0,
-                Math.min(selectableList.length - 1, selectedIndex + step),
-            );
-
-            //scrollSelectedIntoView();
-        }
+        scrollSelectDelta += deltaPx;
+        if (Math.abs(scrollSelectDelta) < scrollVerticalThreshold) return;
+        const step = scrollSelectDelta > 0 ? 1 : -1;
+        scrollSelectDelta = 0;
+        selectedIndex = Math.max(
+            0,
+            Math.min(selectableList.length - 1, selectedIndex + step),
+        );
+        scrollSelectedIntoView();
     }
 
-    async function executeAction(sectionId, actionId) {
-        if (!tab?.id) return;
-        try {
-            switch (actionId) {
-                case "pin":
-                    await chromeService.pinTab(tab.id);
-                    break;
-                case "reload":
-                    await chromeService.reloadTab(tab.id);
-                    break;
-                case "duplicate":
-                    await chromeService.duplicateTab(tab.id);
-                    break;
-                case "copy": {
-                    const url = await chromeService.copyTabUrl(tab.id);
-                    if (url) await navigator.clipboard.writeText(url);
-                    break;
-                }
-                case "sleep":
-                    await chromeService.discardTab(tab.id);
-                    break;
-                case "find":
-                    await chromeService.activateTab(tab.id);
-                    break;
-                case "move_window":
-                    await chromeService.createWindowWithTab(tab.id);
-                    break;
-                case "close":
-                    await chromeService.closeTab(tab.id);
-                    break;
-                case "close_others":
-                    await chromeService.closeOtherTabs(tab.id);
-                    break;
-                case "close_to_right":
-                    await chromeService.closeTabsToRight(tab.id);
-                    break;
-                case "create_action":
-                    // Placeholder — open create action flow
-                    return;
-                default:
-                    return;
-            }
-            await recentActionsStore.addAction({
-                category: sectionId,
-                action: actionId,
-            });
-            onClose();
-        } catch (e) {
-            console.error("TabMenu action failed:", e);
+    function executeAction(sectionId, actionId) {
+        void runTabMenuAction(tab, sectionId, actionId, onClose);
+    }
+
+    function activateCell(cell) {
+        if (!cell) return;
+        if (cell.type === "back") {
+            closeSubmenu();
+            return;
+        }
+        if (cell.type === "section_nav") {
+            openSubmenu(cell.sectionId);
+            return;
+        }
+        if (cell.type === "create_action") return;
+        if (cell.type === "action") {
+            executeAction(cell.sectionId, cell.data.id);
         }
     }
 
@@ -227,6 +268,10 @@
         if (event.key === "Escape") {
             event.preventDefault();
             event.stopPropagation();
+            if (!searchTrim && menuPanel === "submenu") {
+                closeSubmenu();
+                return;
+            }
             onClose();
             return;
         }
@@ -247,14 +292,9 @@
         }
         if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            const item =
+            const cell =
                 clampedIndex >= 0 ? selectableList[clampedIndex] : null;
-            if (!item) return;
-            if (item.type === "create_action") {
-                // Create action placeholder
-                return;
-            }
-            executeAction(item.sectionId, item.data.id);
+            activateCell(cell);
             return;
         }
         if (
@@ -274,17 +314,8 @@
             }
             searchQuery += event.key;
             selectedIndex = 0;
+            scrollSelectDelta = 0;
             event.preventDefault();
-        }
-    }
-
-    function handleWheel(event) {
-        // Scroll-to-select only when mouse is OUTSIDE the menu
-        if (!event.target.closest(".tab-menu")) {
-            event.preventDefault();
-            event.stopPropagation();
-            const delta = event.deltaY > 0 ? 1 : -1;
-            handleScrollSelect(delta);
         }
     }
 
@@ -308,54 +339,73 @@
         aria-label="Tab actions"
         transition:scale={{ duration: 180 }}
     >
-        <!-- Search field (Notion-style) -->
-        <div class="menu-search">
-            <span class="material-symbols-rounded search-icon">search</span>
-            <input
-                type="text"
-                class="search-input"
-                placeholder="Search actions..."
-                bind:value={searchQuery}
-                role="searchbox"
-            />
-        </div>
-
-        <div class="tab-menu-list" bind:this={listEl}>
-            {#each flattenedListWithIndex as { item, selectableIdx } (item.type + (item.data?.id ?? item.label ?? selectableIdx))}
-                {#if item.type === "header"}
-                    <div class="section-header">{item.label}</div>
-                {:else if item.type === "create_action"}
-                    <button
-                        class="tab-menu-item create-action"
-                        class:selected={selectedItem?.type === "create_action"}
-                        role="menuitem"
-                        data-selectable-index={selectableIdx}
-                        on:click={() => {}}
-                    >
-                        <span
-                            class="material-symbols-rounded create-action-icon"
-                            >add_circle_outline</span
+        <div class="tab-menu-body tab-menu-items" bind:this={listEl}>
+            {#each viewNodes as node, ni (nodeKey(node, ni))}
+                {#if node.type === "section_head"}
+                    <div class="menu-section-head" role="presentation">
+                        <span class="section-title">{node.label}</span>
+                        <span class="section-rule" aria-hidden="true"></span>
+                    </div>
+                {:else}
+                    {@const cell = node.cell}
+                    {@const si = node.selectableIndex}
+                    {#if cell.type === "action"}
+                        <button
+                            type="button"
+                            class="chip"
+                            class:chip--selected={isCellSelected(cell)}
+                            data-selectable-index={si}
+                            on:click={() => {
+                                selectedIndex = si;
+                                executeAction(cell.sectionId, cell.data.id);
+                            }}
                         >
-                        <span class="tab-menu-item-label">Create action</span>
-                    </button>
-                {:else if item.type === "action"}
-                    <button
-                        class="tab-menu-item"
-                        class:selected={selectedItem?.type === "action" &&
-                            selectedItem?.data?.id === item.data.id}
-                        role="menuitem"
-                        data-selectable-index={selectableIdx}
-                        on:click={() =>
-                            executeAction(item.sectionId, item.data.id)}
-                    >
-                        <span
-                            class="material-symbols-rounded tab-menu-item-icon"
-                            >{item.data.icon}</span
+                            <span class="material-symbols-rounded chip-icon"
+                                >{cell.data.icon}</span
+                            >
+                            {cell.data.label}
+                        </button>
+                    {:else if cell.type === "create_action"}
+                        <button
+                            type="button"
+                            class="chip"
+                            class:chip--selected={isCellSelected(cell)}
+                            data-selectable-index={si}
+                            on:click={() => {}}
                         >
-                        <span class="tab-menu-item-label"
-                            >{item.data.label}</span
+                            <span class="material-symbols-rounded chip-icon"
+                                >add_circle_outline</span
+                            >
+                            Create action
+                        </button>
+                    {:else if cell.type === "section_nav"}
+                        <button
+                            type="button"
+                            class="chip chip--section-nav"
+                            class:chip--selected={isCellSelected(cell)}
+                            data-selectable-index={si}
+                            on:click={() => openSubmenu(cell.sectionId)}
                         >
-                    </button>
+                            {cell.label}
+                            <span class="material-symbols-rounded chip-chevron"
+                                >arrow_forward_ios</span
+                            >
+                        </button>
+                    {:else if cell.type === "back"}
+                        <button
+                            type="button"
+                            class="chip chip--section-nav"
+                            class:chip--selected={isCellSelected(cell)}
+                            data-selectable-index={si}
+                            on:click={closeSubmenu}
+                        >
+                            <span
+                                class="material-symbols-rounded chip-chevron chip-chevron--back"
+                                >arrow_back_ios_new</span
+                            >
+                            Back
+                        </button>
+                    {/if}
                 {/if}
             {/each}
         </div>
@@ -365,27 +415,39 @@
 <style>
     .tab-menu {
         position: fixed;
-        right: 20px;
-        bottom: 118px;
+        right: 400px;
+        bottom: 20px;
         z-index: 999991;
-        width: 340px;
-        max-height: 420px;
+        width: 320px;
+        max-height: min(480px, calc(100vh - 40px));
         display: flex;
         flex-direction: column;
-        background: var(--st-bg-primary, rgba(30, 30, 30, 0.95));
-        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        background: var(--st-bg-primary, rgba(30, 30, 30, 0.97));
+
+        border-radius: 10px;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
         overflow: hidden;
+    }
+
+    .tab-menu--docked {
+        position: relative;
+        right: auto;
+        bottom: auto;
+        flex: 0 1 auto;
+        width: clamp(220px, 36vw, 320px);
+        min-width: 200px;
+        max-height: min(50vh, 480px);
+        align-self: stretch;
     }
 
     .menu-search {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 12px 16px;
+        padding: 12px 12px 10px;
         border-bottom: 1px solid
             var(--st-border-color, rgba(255, 255, 255, 0.1));
+        flex-shrink: 0;
     }
 
     .search-icon {
@@ -411,59 +473,86 @@
         color: var(--st-text-muted, #808080);
     }
 
-    .tab-menu-list {
-        flex: 1;
+    .tab-menu-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-x: hidden;
         overflow-y: auto;
-        padding: 8px 0;
-        margin: 0px;
-        max-height: 360px;
+        padding: 8px 12px 14px;
+        scrollbar-width: thin;
+    }
+
+    .tab-menu-items {
         display: flex;
-        flex-direction: column;
-        gap: 2px;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 6px;
     }
 
-    .section-header {
-        padding: 8px 5px 0px 5px;
-        margin: 12px 8px 5px 8px;
-        font-size: 11px;
-        font-weight: 600;
-        color: var(--st-text-muted, #808080);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        border-top: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.1));
+    .menu-section-head {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 10px;
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+        margin-top: 2px;
     }
 
-    .section-header:first-of-type {
+    .menu-section-head:first-child {
         margin-top: 0;
     }
 
-    .tab-menu-item {
-        display: flex;
+    .section-title {
+        flex: 0 0 auto;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--st-text-muted, #888);
+    }
+
+    .section-rule {
+        flex: 1 1 auto;
+        min-width: 12px;
+        height: 1px;
+        background-color: #333333;
+    }
+
+    .chip {
+        display: inline-flex;
         align-items: center;
-        gap: 12px;
-        padding: 15px 6px;
+        gap: 4px;
+        padding: 0 10px;
+        height: 26px;
+        font-size: 12px;
+        color: var(--st-text-primary, #eee);
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
         border: none;
-        border-radius: 6px;
-        background: transparent;
-        color: var(--st-text-primary, #ffffff);
-        font-size: 14px;
+        max-width: 100%;
+        opacity: 0.72;
         cursor: pointer;
         text-align: left;
-        width: calc(100% - 24px);
-        max-height: 20px;
-        height: 20px;
-        min-height: 20px;
-        margin: 0px 12px;
-        transition: background 0.1s;
+        box-sizing: border-box;
+        transition:
+            background 0.1s,
+            opacity 0.1s;
     }
 
-    .tab-menu-item:hover,
-    .tab-menu-item.selected {
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
+    .chip:hover {
+        background: rgba(255, 255, 255, 0.12);
+        opacity: 0.92;
     }
 
-    .tab-menu-item-icon {
-        font-size: 20px;
+    .chip--selected {
+        opacity: 1;
+    }
+
+    .chip-icon {
+        font-size: 16px;
         color: var(--st-text-secondary, #b0b0b0);
         font-variation-settings:
             "FILL" 0,
@@ -472,16 +561,21 @@
             "opsz" 48;
     }
 
-    .tab-menu-item-label {
-        flex: 1;
+    .chip--section-nav {
+        justify-content: space-between;
     }
 
-    .create-action-icon {
-        color: var(--st-text-muted, #808080);
+    .chip-chevron {
+        font-size: 12px;
+        opacity: 0.6;
         font-variation-settings:
             "FILL" 0,
             "wght" 500,
             "GRAD" 0,
             "opsz" 48;
+    }
+
+    .chip-chevron--back {
+        margin-right: 2px;
     }
 </style>

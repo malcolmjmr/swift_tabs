@@ -160,34 +160,44 @@
     }
 </script>
 
-{#if listLoading && highlightsPages.length === 0 && !listError}
-    <div class="empty-state">Loading highlights…</div>
-{:else if listError && highlightsPages.length === 0}
-    <div class="empty-state">{listError}</div>
-{:else if visibleResults.length === 0}
-    <div class="empty-state">
-        {q
-            ? `No pages match '${query.trim()}'`
-            : "No highlights on web pages yet"}
-    </div>
-{:else}
-    <div bind:this={resultsListEl} class="results-list" role="listbox">
-        <OmniboxSectionResultList
-            {visibleResults}
-            {selectedResultIndex}
-            {appsEditMode}
-            {faviconFailedByKey}
-            onFaviconError={markResultFaviconFailed}
-            onRowClick={onResultRowClick}
-            onRowDblClick={onResultRowDblClick}
-            onAppsDragStart={() => {}}
-            onAppsDragOver={() => {}}
-            onAppsDrop={() => {}}
-        />
-    </div>
-{/if}
+<div class="omnibox-section-highlights">
+    {#if listLoading && highlightsPages.length === 0 && !listError}
+        <div class="empty-state">Loading highlights…</div>
+    {:else if listError && highlightsPages.length === 0}
+        <div class="empty-state">{listError}</div>
+    {:else if visibleResults.length === 0}
+        <div class="empty-state">
+            {q
+                ? `No pages match '${query.trim()}'`
+                : "No highlights on web pages yet"}
+        </div>
+    {:else}
+        <div bind:this={resultsListEl} class="results-list" role="listbox">
+            <OmniboxSectionResultList
+                {visibleResults}
+                {selectedResultIndex}
+                {appsEditMode}
+                {faviconFailedByKey}
+                onFaviconError={markResultFaviconFailed}
+                onRowClick={onResultRowClick}
+                onRowDblClick={onResultRowDblClick}
+                onAppsDragStart={() => {}}
+                onAppsDragOver={() => {}}
+                onAppsDrop={() => {}}
+            />
+        </div>
+    {/if}
+</div>
 
 <style>
+    .omnibox-section-highlights {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        border-radius: 10px;
+        margin-bottom: 16px;
+    }
+
     .empty-state {
         padding: 24px 16px;
         color: var(--st-text-muted, #888);

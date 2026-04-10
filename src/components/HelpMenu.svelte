@@ -39,15 +39,17 @@
         <section>
             <h3>Omnibox</h3>
             <ul>
-                <li><kbd>n</kbd> — Open omnibox (enters navigation mode if needed)</li>
+                <li><kbd>n</kbd> (short press) — Open omnibox (enters navigation mode if needed)</li>
+                <li><kbd>n</kbd> (hold) — New tab at <code>chrome://newtab/</code> (Swift Tabs new tab page)</li>
                 <li>In navigation mode, type any character — Search tabs</li>
             </ul>
         </section>
         <section>
             <h3>Tab menu</h3>
             <ul>
-                <li><kbd>a</kbd> / <kbd>m</kbd> — Open tab actions menu</li>
-                <li><kbd>⌘</kbd> (hold) — Open tab menu when a tab is available</li>
+                <li><kbd>m</kbd> — Open move tab modal (popup, window, space, …)</li>
+                <li><kbd>a</kbd> — Edit the current URL (same strip as tab info)</li>
+                <li><kbd>⌘</kbd> (tap in navigation mode) — Toggle full tab actions menu (beside the tab list when the strip is visible)</li>
             </ul>
         </section>
         <section>
@@ -65,7 +67,7 @@
         <section>
             <h3>Idle tab actions</h3>
             <p class="help-menu__note">
-                In a text field: <kbd>⌘</kbd> + <kbd>Space</kbd> (macOS) or <kbd>Ctrl</kbd> + <kbd>Space</kbd> (Windows/Linux) enters navigation mode. When not in navigation mode, omnibox, tab menu, group menu, settings, tab switching overlay,
+                In a text field: <kbd>⌘</kbd> + <kbd>Space</kbd> (macOS) or <kbd>Ctrl</kbd> + <kbd>Space</kbd> (Windows/Linux) enters navigation mode. When not in navigation mode, omnibox, group menu, settings, tab switching overlay,
                 or this help panel (no modifier keys except <kbd>?</kbd> as noted):
             </p>
             <ul>

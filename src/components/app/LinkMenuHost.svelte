@@ -14,6 +14,8 @@
     export let helpMenuIsOpen = false;
     export let systemMenuIsOpen = false;
     export let settingsPageIsOpen = false;
+    export let moveMenuIsOpen = false;
+    export let activeTabAddressOpen = false;
 
     let linkMenuOpen = false;
     let linkMenuX = 0;
@@ -39,6 +41,8 @@
         if (
             !a ||
             tabMenuIsOpen ||
+            moveMenuIsOpen ||
+            activeTabAddressOpen ||
             helpMenuIsOpen ||
             linkMenuOpen ||
             linkPreviewUrl ||

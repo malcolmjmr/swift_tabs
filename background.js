@@ -3,6 +3,8 @@ import {
     appsDeleteApp,
     appsGetState,
     appsMergeIntoFolder,
+    appsMoveAppIntoFolder,
+    appsMoveAppToHomeRoot,
     appsPutApp,
     appsPutLayout,
     appsRemoveFromHome,
@@ -29,7 +31,7 @@ const LINK_QUEUE_SESSION_KEY = "swiftTabsLinkQueueByTab";
 
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === PLANNER_RECONCILE_ALARM) {
-        chrome.runtime.sendMessage({ type: "PLANNER_RECONCILE" }).catch(() => {});
+        chrome.runtime.sendMessage({ type: "PLANNER_RECONCILE" }).catch(() => { });
     }
 });
 
@@ -131,9 +133,18 @@ function onRuntimeMessage(message, sender, sendResponse) {
             });
             return true;
         }
-        handler(message.data, sender)
-            .then(sendResponse)
-            .catch(error => sendResponse({ error: error.message }));
+        void (async () => {
+            try {
+                const result = await handler(message.data, sender);
+                sendResponse(result);
+            } catch (error) {
+                const msg =
+                    error && typeof error === "object" && "message" in error
+                        ? String(error.message)
+                        : String(error);
+                sendResponse({ error: msg || "CHROME_API handler failed" });
+            }
+        })();
     } else if (message.type === 'SCROLL') {
         handleTabSwitch(message.scrollDelta, sender.tab.id);
     } else if (message.type === 'TAB_SWITCHED') {
@@ -467,8 +478,24 @@ const chromeApiHandlers = {
         return chrome.tabs.reload(tabId);
     },
 
+    async UPDATE_TAB_URL({ tabId, url }) {
+        if (tabId == null || typeof url !== "string" || !url.trim()) {
+            throw new Error("UPDATE_TAB_URL requires tabId and url");
+        }
+        return chrome.tabs.update(tabId, { url: url.trim() });
+    },
+
     async CREATE_TAB(options) {
         return chrome.tabs.create(options);
+    },
+
+    async ADD_TAB_TO_GROUP({ tabId, groupId }) {
+        if (tabId == null || groupId == null) {
+            throw new Error("ADD_TAB_TO_GROUP requires tabId and groupId");
+        }
+        await chrome.tabs.group({ tabIds: [tabId], groupId });
+        broadcastTabsDataChanged();
+        return { success: true };
     },
 
     async MOVE_TAB({ tabId, targetWindowId }, sender) {
@@ -519,7 +546,7 @@ const chromeApiHandlers = {
         return { success: true };
     },
 
-    async CREATE_WINDOW({ tabId, tabIds, focused = false }, sender) {
+    async CREATE_WINDOW({ tabId, tabIds, focused = false, asPopup = false }, sender) {
         const useFocused = focused === true;
         const restoreToWindowId = sender?.tab?.windowId ?? null;
         const ids =
@@ -547,6 +574,7 @@ const chromeApiHandlers = {
             url: "about:blank",
             focused: useFocused,
             incognito: metas[0].incognito === true,
+            ...(asPopup === true ? { type: "popup" } : {}),
         });
         const blankTab = newWindow.tabs?.[0];
         for (const id of orderedIds) {
@@ -611,7 +639,7 @@ const chromeApiHandlers = {
 
         const results = await chrome.history.search({
             text: query.trim(),
-            maxResults: 50,
+            maxResults: 1000,
         });
         return results.map((r) => ({
             id: r.id,
@@ -655,7 +683,7 @@ const chromeApiHandlers = {
     },
 
     async CREATE_EMPTY_WINDOW() {
-        const w = await chrome.windows.create({ focused: false, url: "about:blank" });
+        const w = await chrome.windows.create({ focused: false, url: "chrome://newtab" });
         broadcastTabsDataChanged();
         return w;
     },
@@ -663,7 +691,7 @@ const chromeApiHandlers = {
     async CREATE_EMPTY_INCOGNITO_WINDOW() {
         const w = await chrome.windows.create({
             focused: false,
-            url: "about:blank",
+            url: "chrome://newtab",
             incognito: true,
         });
         broadcastTabsDataChanged();
@@ -673,7 +701,7 @@ const chromeApiHandlers = {
     async CREATE_EMPTY_POPUP_WINDOW() {
         const w = await chrome.windows.create({
             focused: false,
-            url: "about:blank",
+            url: "chrome://newtab",
             type: "popup",
         });
         broadcastTabsDataChanged();
@@ -702,6 +730,60 @@ const chromeApiHandlers = {
         return children
             .filter((n) => !n.url)
             .map((f) => ({ id: f.id, title: f.title || "Untitled" }));
+    },
+
+    async GET_RECENT_DOWNLOADS() {
+
+        if (typeof chrome.downloads?.search !== "function") {
+            return [];
+        }
+        try {
+            const items = await chrome.downloads.search({
+                orderBy: ["-startTime"],
+                limit: 100,
+            });
+            return items.map((d) => ({
+                id: d.id,
+                url: d.url || "",
+                filename: d.filename || "",
+                startTime: d.startTime,
+                state: d.state,
+                type: "download",
+            }));
+        } catch {
+            return [];
+        }
+    },
+
+    async OPEN_DOWNLOAD({ downloadId }) {
+        if (downloadId == null) {
+            throw new Error("OPEN_DOWNLOAD requires downloadId");
+        }
+        try {
+            await chrome.downloads.open(downloadId);
+        } catch {
+            await chrome.downloads.show(downloadId);
+        }
+        return { success: true };
+    },
+
+    async GET_READING_LIST() {
+        if (typeof chrome.readingList?.query !== "function") {
+            return [];
+        }
+        try {
+            const entries = await chrome.readingList.query({});
+            return entries.map((e) => ({
+                url: e.url,
+                title: e.title || extractDomain(e.url),
+                hasBeenRead: e.hasBeenRead === true,
+                creationTime: e.creationTime,
+                lastUpdateTime: e.lastUpdateTime,
+                type: "reading",
+            }));
+        } catch {
+            return [];
+        }
     },
 
     async GET_FAVORITE_DOMAINS() {
@@ -759,19 +841,35 @@ const chromeApiHandlers = {
     },
 
     async GET_RECENT_HISTORY() {
-        // Get recent history with more results for deduplication
+
+        const endTime = Date.now();
+        // 180 days
+        const timeFrame = 180 * 24 * 60 * 60 * 1000;
+        const startTime = endTime - timeFrame;
         const history = await chrome.history.search({
-            text: '',
-            maxResults: 200
+            text: "",
+            startTime,
+            endTime,
+            maxResults: 1000,
         });
 
-        // Deduplicate by URL (keep most recent)
+
         const seenUrls = new Set();
         const uniqueHistory = [];
 
         for (const item of history) {
-            // Normalize URL for deduplication
-            const normalizedUrl = item.url.replace(/#.*$/, '').replace(/\?.*$/, '');
+            if (!item.url || typeof item.url !== "string") continue;
+            const colon = item.url.indexOf(":");
+            if (colon > 0) {
+                const scheme = item.url.slice(0, colon).toLowerCase();
+                if (scheme === "chrome" || scheme === "chrome-extension") {
+                    continue;
+                }
+            }
+
+            const normalizedUrl = item.url
+                .replace(/#.*$/, "")
+                .replace(/\?.*$/, "");
             if (seenUrls.has(normalizedUrl)) continue;
 
             seenUrls.add(normalizedUrl);
@@ -781,54 +879,62 @@ const chromeApiHandlers = {
                 url: item.url,
                 lastVisitTime: item.lastVisitTime,
                 visitCount: item.visitCount,
-                type: 'history'
+                type: "history",
             });
         }
 
-        return uniqueHistory.slice(0, 50);
+
+
+        return uniqueHistory;
     },
 
     async GET_BOOKMARKS_BAR() {
-        // Get the bookmark bar (id '1' is the bookmark bar in Chrome)
-        const bookmarkBar = await chrome.bookmarks.getChildren('1');
-        return bookmarkBar
-            .filter(b => b.url) // Only bookmarks, not folders
-            .map(b => ({
-                id: b.id,
-                title: b.title || extractDomain(b.url),
-                url: b.url,
-                dateAdded: b.dateAdded,
-                type: 'bookmark'
-            }))
-            .sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
-    },
+        const flat = [];
 
-    async GET_ALL_BOOKMARKS() {
-        // Get all bookmarks recursively
-        const allBookmarks = [];
-
-        async function getBookmarksRecursively(id) {
-            const children = await chrome.bookmarks.getChildren(id);
+        async function walkFolder(folderId) {
+            const children = await chrome.bookmarks.getChildren(folderId);
             for (const child of children) {
                 if (child.url) {
-                    allBookmarks.push({
+                    flat.push({
                         id: child.id,
                         title: child.title || extractDomain(child.url),
                         url: child.url,
                         dateAdded: child.dateAdded,
-                        type: 'bookmark'
+                        type: "bookmark",
                     });
-                } else if (child.id !== '1') { // Skip bookmark bar, handled separately
-                    await getBookmarksRecursively(child.id);
+                } else {
+                    await walkFolder(child.id);
                 }
             }
         }
 
-        // Get other bookmarks folder (id '2')
-        await getBookmarksRecursively('2');
+        await walkFolder("1");
+        return flat.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+    },
 
-        // Sort by date added (most recent first) 
-        return allBookmarks.sort((a, b) => (b.dateAdded || 0) - (a.dateAdded || 0));
+    async GET_ALL_BOOKMARKS() {
+        const tree = await chrome.bookmarks.getTree();
+        const allBookmarks = [];
+
+        function walk(nodes) {
+            for (const n of nodes) {
+                if (n.url) {
+                    allBookmarks.push({
+                        id: n.id,
+                        title: n.title || extractDomain(n.url),
+                        url: n.url,
+                        dateAdded: n.dateAdded,
+                        type: "bookmark",
+                    });
+                }
+                if (n.children?.length) walk(n.children);
+            }
+        }
+
+        walk(tree);
+        return allBookmarks.sort(
+            (a, b) => (b.dateAdded || 0) - (a.dateAdded || 0),
+        );
     },
 
     async APPS_GET_STATE() {
@@ -858,6 +964,16 @@ const chromeApiHandlers = {
     async APPS_MERGE_INTO_FOLDER({ appIdA, appIdB, title }) {
         const folder = await appsMergeIntoFolder(appIdA, appIdB, title);
         return { folder };
+    },
+
+    async APPS_MOVE_APP_INTO_FOLDER({ appId, intoFolderId }) {
+        await appsMoveAppIntoFolder(appId, intoFolderId);
+        return { ok: true };
+    },
+
+    async APPS_MOVE_APP_TO_HOME_ROOT({ appId }) {
+        await appsMoveAppToHomeRoot(appId);
+        return { ok: true };
     },
 
     async APPS_REMOVE_FROM_HOME({ appId }) {
@@ -931,7 +1047,7 @@ const chromeApiHandlers = {
         await saveObjective(objective);
         chrome.runtime
             .sendMessage({ type: "PLANNER_OBJECTIVES_CHANGED" })
-            .catch(() => {});
+            .catch(() => { });
         return { ok: true, id: objective.id };
     },
 

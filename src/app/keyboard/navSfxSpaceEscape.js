@@ -40,6 +40,8 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         sendTriageMode,
         getPersistentTabSelection,
         setPersistentTabSelection,
+        getMoveMenuOpen,
+        getShowActiveTabAddress,
     } = ctx;
 
     if (
@@ -119,7 +121,9 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
             tabMenuIsOpen ||
             omniboxIsOpen ||
             systemMenuIsOpen ||
-            settingsPageIsOpen
+            settingsPageIsOpen ||
+            getMoveMenuOpen?.() ||
+            getShowActiveTabAddress?.()
         ) {
             event.preventDefault();
             event.stopPropagation();
@@ -164,6 +168,21 @@ export async function tryNavSfxSpaceEscape(event, ctx) {
         if (helpMenuIsOpen) {
             event.preventDefault();
             setHelpMenuIsOpen(false);
+            return true;
+        }
+        if (tabMenuIsOpen) {
+            event.preventDefault();
+            ctx.setTabMenuIsOpen?.(false);
+            return true;
+        }
+        if (getMoveMenuOpen?.()) {
+            event.preventDefault();
+            ctx.closeMoveMenu?.();
+            return true;
+        }
+        if (getShowActiveTabAddress?.()) {
+            event.preventDefault();
+            ctx.hideActiveTabAddress?.();
             return true;
         }
         if (isInTabSwitchingMode) {

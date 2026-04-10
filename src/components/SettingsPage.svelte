@@ -52,7 +52,7 @@
                 on:input={(e) => patch("longPressDelayMs", e.currentTarget.value)}
             />
             <p class="settings-page__hint">
-                Used for Space (omnibox), ⌘ (tab menu), ⌥ (group menu), and ⌃ (this panel).
+                Used for Space (omnibox), ⌥ (group menu), and ⌃ (this panel).
             </p>
         </section>
         <section>

@@ -6,6 +6,8 @@
         fetchAppSuggestions,
     } from "../../../services/geminiClient";
     import { isSwiftAppsRow, resultFaviconKey } from "../omniboxShared.js";
+    import { collectFirstAppsFromFolder } from "./appsFolderPreview.js";
+    import OmniboxAppsFolderModal from "./OmniboxAppsFolderModal.svelte";
     import OmniboxSectionApps from "./OmniboxSectionApps.svelte";
 
     export let dataEnabled = false;
@@ -29,7 +31,6 @@
     let detailAppId = null;
     /** @type {'home' | 'folder' | 'library'} */
     let detailOpenedFrom = "home";
-    let appsEditMode = false;
     let appsSuggestionsOpen = false;
     let appsSuggestionsLoading = false;
     let appsSuggestionsError = "";
@@ -43,12 +44,18 @@
     /** @type {HTMLElement | undefined} */
     let appsIconFlowEl;
     let appsSuppressNextClick = false;
+    let appsFolderDropRailActive = false;
+    /** @type {object[]} */
+    let recentHistoryPreview = [];
 
     /** @type {object[]} */
     let visibleResults = [];
     let selectedResultIndex = 0;
     /** @type {Record<string, boolean>} */
     let faviconFailedByKey = {};
+
+    /** @type {{ id: string, title: string, items: object[] } | null} */
+    let folderModalRoot = null;
 
     let loadStarted = false;
 
@@ -63,10 +70,39 @@
         appsView = "home";
         appsFolderStack = [];
         detailAppId = null;
-        appsEditMode = false;
+        folderModalRoot = null;
     }
 
     $: debouncedQuery, applyAppsVisibleResults();
+
+    /** @param {object[]} items @param {string} folderId */
+    function findFolderInTree(items, folderId) {
+        for (const it of items || []) {
+            if (it.kind === "folder") {
+                if (it.id === folderId) return it;
+                const inner = findFolderInTree(it.items || [], folderId);
+                if (inner) return inner;
+            }
+        }
+        return null;
+    }
+
+    function resyncAppsFolderStackFromLayout() {
+        const next = [];
+        for (const frame of appsFolderStack) {
+            const node = findFolderInTree(appsLayout.items || [], frame.id);
+            if (!node || node.kind !== "folder") break;
+            next.push({
+                id: node.id,
+                title: node.title || "",
+                items: JSON.parse(JSON.stringify(node.items || [])),
+            });
+        }
+        appsFolderStack = next;
+        if (appsView === "folder" && next.length === 0) {
+            appsView = "home";
+        }
+    }
 
     async function loadAppsState() {
         try {
@@ -80,10 +116,19 @@
             appsRegistryById = Object.fromEntries(
                 appsRegistryList.map((a) => [a.id, a]),
             );
+            recentHistoryPreview = Array.isArray(r?.recentHistoryPreview)
+                ? r.recentHistoryPreview
+                : [];
+            resyncAppsFolderStackFromLayout();
             applyAppsVisibleResults();
         } catch (e) {
             console.warn("Omnibox: apps state", e);
         }
+    }
+
+    /** Inline folder so apps can be dragged to the home rail. */
+    function openFolderForBrowse(folder) {
+        openAppsFolder(folder);
     }
 
     function isAppsIconFlowView() {
@@ -106,7 +151,7 @@
         const root = appsIconFlowEl;
         const n = visibleResults.length;
         if (!root || n === 0) return [];
-        const tiles = [...root.querySelectorAll(".apps-icon-tile")];
+        const tiles = [...root.querySelectorAll(".apps-icon-slot")];
         if (tiles.length !== n) return [];
         /** @type {number[][]} */
         const rows = [];
@@ -192,12 +237,20 @@
     function appsIconPointerDown(i, item, e) {
         if (e.button !== 0) return;
         clearAppsLongPressTimer();
-        if (!isSwiftAppsRow(item) || item.type === "stAllApps") return;
+        if (!isSwiftAppsRow(item)) return;
         appsLongPressTimer = setTimeout(() => {
             appsLongPressTimer = null;
-            appsEditMode = true;
             appsSuppressNextClick = true;
             selectedResultIndex = i;
+            if (item.type === "stApp") {
+                openAppsDetail(item.app.id);
+            } else if (item.type === "stLibApp") {
+                openAppsDetail(item.app.id, "library");
+            } else if (item.type === "stFolder") {
+                openFolderForBrowse(item.folder);
+            } else if (item.type === "stAllApps") {
+                openAppsLibrary();
+            }
         }, APPS_LONG_PRESS_MS);
     }
 
@@ -255,8 +308,13 @@
                 rows.push({
                     type: "stFolder",
                     folder: it,
-                    title: it.title || "Folder",
+                    title: it.title || "",
                     subtitle: `${countFolderEntries(it)} items`,
+                    folderPreviewApps: collectFirstAppsFromFolder(
+                        it,
+                        appsRegistryById,
+                        9,
+                    ),
                 });
             }
         }
@@ -264,6 +322,7 @@
             type: "stAllApps",
             title: "All apps",
             subtitle: "Browse full library",
+            folderPreviewApps: recentHistoryPreview.slice(0, 9),
         });
         return rows;
     }
@@ -288,8 +347,13 @@
                 rows.push({
                     type: "stFolder",
                     folder: it,
-                    title: it.title || "Folder",
+                    title: it.title || "",
                     subtitle: `${countFolderEntries(it)} items`,
+                    folderPreviewApps: collectFirstAppsFromFolder(
+                        it,
+                        appsRegistryById,
+                        9,
+                    ),
                 });
             }
         }
@@ -298,8 +362,32 @@
 
     function buildAppsLibraryRows(q) {
         const rows = [];
-        for (const app of appsRegistryList) {
-            if (!matchesAppQuery(app, q)) continue;
+        const historyRank = new Map(
+            recentHistoryPreview.map((a, idx) => [a.id, idx]),
+        );
+        const sorted = [...appsRegistryList].sort((a, b) => {
+            const ta = a.lastOpenedAt || 0;
+            const tb = b.lastOpenedAt || 0;
+            if (tb !== ta) return tb - ta;
+            const ra = historyRank.get(a.id);
+            const rb = historyRank.get(b.id);
+            if (ra !== rb) return (ra ?? 1e9) - (rb ?? 1e9);
+            const na = (
+                a.displayTitle ||
+                a.title ||
+                a.domain ||
+                ""
+            ).toLowerCase();
+            const nb = (
+                b.displayTitle ||
+                b.title ||
+                b.domain ||
+                ""
+            ).toLowerCase();
+            return na.localeCompare(nb);
+        });
+        for (const app of sorted) {
+            //if (!matchesAppQuery(app, q)) continue;
             rows.push({
                 type: "stLibApp",
                 app,
@@ -345,13 +433,32 @@
             ...appsFolderStack,
             {
                 id: folder.id,
-                title: folder.title || "Folder",
+                title: folder.title || "",
                 items: JSON.parse(JSON.stringify(folder.items || [])),
             },
         ];
         appsView = "folder";
         applyAppsVisibleResults();
         selectedResultIndex = 0;
+    }
+
+    function openFolderModal(folder) {
+        folderModalRoot = {
+            id: folder.id,
+            title: folder.title || "",
+            items: JSON.parse(JSON.stringify(folder.items || [])),
+        };
+    }
+
+    function closeFolderModal() {
+        folderModalRoot = null;
+    }
+
+    async function modalLaunchApp(app) {
+        await launchSwiftApp(app);
+        closeFolderModal();
+        dispatch("submit");
+        dispatch("close");
     }
 
     function openAppsLibrary() {
@@ -423,7 +530,7 @@
             return;
         }
         if (item.type === "stFolder") {
-            openAppsFolder(item.folder);
+            openFolderForBrowse(item.folder);
             return;
         }
         if (item.type === "stAllApps") {
@@ -442,7 +549,7 @@
             return;
         }
         if (item.type === "stFolder") {
-            openAppsFolder(item.folder);
+            openFolderForBrowse(item.folder);
             return;
         }
         if (item.type === "stAllApps") {
@@ -457,7 +564,7 @@
             dispatch("close");
             return;
         }
-        if (item.type === "stFolder") openAppsFolder(item.folder);
+        if (item.type === "stFolder") openFolderForBrowse(item.folder);
         else if (item.type === "stAllApps") openAppsLibrary();
     }
 
@@ -469,7 +576,7 @@
             );
             return;
         }
-        if (item.type === "stFolder") openAppsFolder(item.folder);
+        if (item.type === "stFolder") openFolderForBrowse(item.folder);
         else if (item.type === "stAllApps") openAppsLibrary();
     }
 
@@ -572,25 +679,60 @@
     }
 
     function onAppsDragStart(i, item, e) {
-        if (!appsEditMode || !isSwiftAppsRow(item)) return;
-        if (item.type === "stAllApps") return;
+        if (!isSwiftAppsRow(item)) return;
+        if (
+            item.type === "stAllApps" ||
+            item.type === "stLibApp" ||
+            appsView === "library"
+        )
+            return;
         appsDragFromIndex = i;
+        if (appsView === "folder" && item.type === "stApp") {
+            appsFolderDropRailActive = true;
+        }
         try {
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("text/plain", String(i));
+            const el = e.currentTarget;
+            if (
+                el instanceof HTMLElement &&
+                el.classList.contains("apps-icon-tile")
+            ) {
+                const r = el.getBoundingClientRect();
+                e.dataTransfer.setDragImage(el, r.width / 2, r.height / 2);
+            }
         } catch (_) {}
     }
 
     function onAppsDragOver(i, e) {
-        if (!appsEditMode || appsDragFromIndex === null) return;
+        if (appsDragFromIndex === null) return;
         e.preventDefault();
         try {
             e.dataTransfer.dropEffect = "move";
         } catch (_) {}
     }
 
+    function onAppsDragOverHomeRail(e) {
+        if (appsDragFromIndex === null) return;
+        e.preventDefault();
+        try {
+            e.dataTransfer.dropEffect = "move";
+        } catch (_) {}
+    }
+
+    async function onAppsDropHomeRail(e) {
+        if (appsDragFromIndex === null) return;
+        e.preventDefault();
+        const from = appsDragFromIndex;
+        appsDragFromIndex = null;
+        const fromItem = visibleResults[from];
+        if (fromItem?.type !== "stApp" || appsView !== "folder") return;
+        await chromeService.appsMoveAppToHomeRoot(fromItem.app.id);
+        await loadAppsState();
+    }
+
     async function onAppsDrop(i, item, e) {
-        if (!appsEditMode || appsDragFromIndex === null) return;
+        if (appsDragFromIndex === null) return;
         e.preventDefault();
         const from = appsDragFromIndex;
         appsDragFromIndex = null;
@@ -598,6 +740,16 @@
 
         const fromItem = visibleResults[from];
         const toItem = visibleResults[i];
+
+        if (fromItem?.type === "stApp" && toItem?.type === "stFolder") {
+            await chromeService.appsMoveAppIntoFolder(
+                fromItem.app.id,
+                toItem.folder.id,
+            );
+            await loadAppsState();
+            return;
+        }
+
         if (
             fromItem?.type === "stApp" &&
             toItem?.type === "stApp" &&
@@ -607,10 +759,9 @@
                 fromItem.app.id,
                 toItem.app.id,
             );
-            await loadAppsState();
             appsFolderStack = [];
             appsView = "home";
-            applyAppsVisibleResults();
+            await loadAppsState();
             return;
         }
 
@@ -618,7 +769,10 @@
         const list =
             appsView === "home"
                 ? [...(appsLayout.items || [])]
-                : [...(appsFolderStack[appsFolderStack.length - 1]?.items || [])];
+                : [
+                      ...(appsFolderStack[appsFolderStack.length - 1]?.items ||
+                          []),
+                  ];
         const layoutIndexFrom = homeRowIndexToLayoutIndex(from);
         const layoutIndexTo = homeRowIndexToLayoutIndex(i);
         if (layoutIndexFrom < 0 || layoutIndexTo < 0) return;
@@ -639,6 +793,34 @@
         applyAppsVisibleResults();
     }
 
+    async function removeFolderFromHomeRoot(folderId) {
+        const prev = appsLayout.items || [];
+        const next = prev.filter(
+            (it) => !(it.kind === "folder" && it.id === folderId),
+        );
+        if (next.length === prev.length) return;
+        appsLayout = { ...appsLayout, items: next };
+        await chromeService.appsPutLayout(appsLayout);
+    }
+
+    async function onAppsDragEnd() {
+        appsFolderDropRailActive = false;
+        const from = appsDragFromIndex;
+        appsDragFromIndex = null;
+        if (from == null) return;
+        const item = visibleResults[from];
+        if (!item || !isSwiftAppsRow(item)) return;
+        if (item.type === "stAllApps" || item.type === "stLibApp") return;
+        if (appsView !== "home") return;
+        if (item.type === "stApp") {
+            await chromeService.appsRemoveFromHome(item.app.id);
+            await loadAppsState();
+        } else if (item.type === "stFolder") {
+            await removeFolderFromHomeRoot(item.folder.id);
+            await loadAppsState();
+        }
+    }
+
     function homeRowIndexToLayoutIndex(rowIndex) {
         const item = visibleResults[rowIndex];
         if (!item || item.type === "stAllApps") return -1;
@@ -648,7 +830,11 @@
                 : appsFolderStack[appsFolderStack.length - 1]?.items || [];
         for (let j = 0; j < list.length; j++) {
             const it = list[j];
-            if (it.kind === "app" && item.type === "stApp" && it.appId === item.app.id)
+            if (
+                it.kind === "app" &&
+                item.type === "stApp" &&
+                it.appId === item.app.id
+            )
                 return j;
             if (
                 it.kind === "folder" &&
@@ -690,7 +876,7 @@
     }
 
     function scrollSelectedIntoView() {
-        const tile = resultsListEl?.querySelector(".apps-icon-tile.selected");
+        const tile = resultsListEl?.querySelector(".apps-icon-slot--selected");
         if (tile) {
             tile.scrollIntoView({ block: "nearest", behavior: "smooth" });
             return;
@@ -708,8 +894,8 @@
 
     /** @returns {boolean} */
     export function handleOmniboxEscape() {
-        if (appsEditMode) {
-            appsEditMode = false;
+        if (folderModalRoot) {
+            closeFolderModal();
             return true;
         }
         return false;
@@ -748,11 +934,7 @@
         const qEmpty = !query.trim();
 
         if (appsView === "detail") {
-            if (
-                qEmpty &&
-                event.key === " " &&
-                sectionResultsOpen
-            ) {
+            if (qEmpty && event.key === " " && sectionResultsOpen) {
                 event.preventDefault();
                 const app = appsRegistryById[detailAppId];
                 if (app) {
@@ -793,11 +975,7 @@
             }
         }
 
-        if (
-            !qEmpty &&
-            sectionResultsOpen &&
-            isAppsIconFlowView()
-        ) {
+        if (!qEmpty && sectionResultsOpen && isAppsIconFlowView()) {
             if (event.key === "ArrowUp") {
                 event.preventDefault();
                 moveSelectionLinear(-1);
@@ -823,11 +1001,7 @@
         }
 
         if (event.key === "Enter") {
-            if (
-                qEmpty &&
-                sectionResultsOpen &&
-                isAppsIconFlowView()
-            ) {
+            if (qEmpty && sectionResultsOpen && isAppsIconFlowView()) {
                 event.preventDefault();
                 void appsHandleSecondaryAction();
                 return true;
@@ -846,7 +1020,9 @@
     }
 
     $: emptyMessage =
-        debouncedQuery.trim() && visibleResults.length === 0 && isAppsIconFlowView()
+        debouncedQuery.trim() &&
+        visibleResults.length === 0 &&
+        isAppsIconFlowView()
             ? `No apps match '${query.trim()}'`
             : appsRegistryList.length === 0
               ? "No apps yet"
@@ -856,15 +1032,15 @@
 {#if appsView === "detail"}
     <OmniboxSectionApps
         mode="detail"
-        detailAppId={detailAppId}
-        appsRegistryById={appsRegistryById}
+        {detailAppId}
+        {appsRegistryById}
         bind:detailTitleEdit
         bind:newQueueUrl
         bind:appsSuggestionsOpen
-        appsSuggestionsLoading={appsSuggestionsLoading}
-        appsSuggestionsError={appsSuggestionsError}
-        appsDetailSuggestionsText={appsDetailSuggestionsText}
-        appIdOnHomeLayout={appIdOnHomeLayout}
+        {appsSuggestionsLoading}
+        {appsSuggestionsError}
+        {appsDetailSuggestionsText}
+        {appIdOnHomeLayout}
         onPersistDetailTitle={() => void persistDetailTitle()}
         onAddQueueLink={() => void addQueueLink()}
         onRemoveQueueLink={(id) => void removeQueueLink(id)}
@@ -876,32 +1052,47 @@
         on:submit={() => dispatch("submit")}
         on:close={() => dispatch("close")}
     />
-{:else if visibleResults.length === 0}
-    <div class="empty-state">{emptyMessage}</div>
 {:else}
-    <div
-        bind:this={resultsListEl}
-        class="results-list"
-        class:results-list--apps-arrange={appsEditMode && isAppsIconFlowView()}
-        role="listbox"
-    >
-        <OmniboxSectionApps
-            mode="icons"
-            {visibleResults}
-            {selectedResultIndex}
-            {appsEditMode}
-            {faviconFailedByKey}
-            bind:appsIconFlowEl
-            onFaviconError={markResultFaviconFailed}
-            onAppsIconPointerDown={appsIconPointerDown}
-            onAppsIconPointerUpCancel={appsIconPointerUpCancel}
-            onAppsDragStart={onAppsDragStart}
-            onAppsDragOver={onAppsDragOver}
-            onAppsDrop={onAppsDrop}
-            onResultRowClick={onResultRowClick}
-            onResultRowDblClick={onResultRowDblClick}
-        />
-    </div>
+    <OmniboxAppsFolderModal
+        open={folderModalRoot != null}
+        rootFolder={folderModalRoot}
+        {appsRegistryById}
+        {faviconFailedByKey}
+        onFaviconError={markResultFaviconFailed}
+        onClose={closeFolderModal}
+        onLaunchApp={modalLaunchApp}
+    />
+    {#if visibleResults.length === 0}
+        <div class="empty-state">{emptyMessage}</div>
+    {:else}
+        <div
+            bind:this={resultsListEl}
+            class="results-list"
+            class:results-list--apps-arrange={isAppsIconFlowView()}
+            role="listbox"
+        >
+            <OmniboxSectionApps
+                mode="icons"
+                {visibleResults}
+                {selectedResultIndex}
+                showDropToHomeRail={appsView === "folder" &&
+                    appsFolderDropRailActive}
+                {faviconFailedByKey}
+                bind:appsIconFlowEl
+                onFaviconError={markResultFaviconFailed}
+                onAppsIconPointerDown={appsIconPointerDown}
+                onAppsIconPointerUpCancel={appsIconPointerUpCancel}
+                {onAppsDragStart}
+                {onAppsDragOver}
+                {onAppsDrop}
+                {onAppsDragOverHomeRail}
+                {onAppsDropHomeRail}
+                onAppsDragEnd={() => void onAppsDragEnd()}
+                {onResultRowClick}
+                {onResultRowDblClick}
+            />
+        </div>
+    {/if}
 {/if}
 
 <style>

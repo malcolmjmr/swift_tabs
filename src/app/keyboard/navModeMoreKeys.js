@@ -49,6 +49,11 @@ export async function tryNavModeMoreKeys(event, ctx) {
     if (
         (event.key === "Delete" || event.key === "Backspace") &&
         inNavOrTriage &&
+        !omniboxIsOpen &&
+        !tabMenuIsOpen &&
+        !helpMenuIsOpen &&
+        !systemMenuIsOpen &&
+        !settingsPageIsOpen &&
         getSelectedTab() &&
         windowSlideOrTriage
     ) {
@@ -115,6 +120,11 @@ export async function tryNavModeMoreKeys(event, ctx) {
     if (
         event.key === "Enter" &&
         inNavOrTriage &&
+        !omniboxIsOpen &&
+        !tabMenuIsOpen &&
+        !helpMenuIsOpen &&
+        !systemMenuIsOpen &&
+        !settingsPageIsOpen &&
         getSelectedTab() &&
         windowSlideOrTriage
     ) {

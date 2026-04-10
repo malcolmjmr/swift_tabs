@@ -1,18 +1,52 @@
+/**
+ * Background returns `{ error: string }` on failure; that must reject, not resolve,
+ * or UI code assigns objects into "arrays" and breaks.
+ * @param {unknown} r
+ */
+function isChromeApiErrorPayload(r) {
+    return (
+        r != null &&
+        typeof r === "object" &&
+        !Array.isArray(r) &&
+        typeof /** @type {{ error?: unknown }} */ (r).error === "string" &&
+        String(/** @type {{ error: string }} */ (r).error).length > 0
+    );
+}
+
 // Service to handle tab operations through the background script
 export const chromeService = {
     async sendMessage(endpoint, data = {}) {
         return new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({
-                type: "CHROME_API",
-                endpoint,
-                data
-            }, response => {
-                if (chrome.runtime.lastError) {
-                    reject(chrome.runtime.lastError);
-                } else {
+            chrome.runtime.sendMessage(
+                {
+                    type: "CHROME_API",
+                    endpoint,
+                    data,
+                },
+                (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(
+                            new Error(
+                                chrome.runtime.lastError.message ||
+                                    "Extension messaging failed",
+                            ),
+                        );
+                        return;
+                    }
+                    if (isChromeApiErrorPayload(response)) {
+                        reject(
+                            new Error(
+                                String(
+                                    /** @type {{ error: string }} */ (response)
+                                        .error,
+                                ),
+                            ),
+                        );
+                        return;
+                    }
                     resolve(response);
-                }
-            });
+                },
+            );
         });
     },
 
@@ -64,6 +98,14 @@ export const chromeService = {
         return this.sendMessage('MOVE_TAB', { tabId, targetWindowId });
     },
 
+    /**
+     * @param {number} tabId
+     * @param {number} groupId
+     */
+    async addTabToGroup(tabId, groupId) {
+        return this.sendMessage("ADD_TAB_TO_GROUP", { tabId, groupId });
+    },
+
     async moveTabWithinWindow(tabId, delta) {
         return this.sendMessage('MOVE_TAB_WITHIN_WINDOW', { tabId, delta });
     },
@@ -82,25 +124,35 @@ export const chromeService = {
 
     /**
      * @param {number} tabId
-     * @param {{ focused?: boolean }} [options] — default focused: false
+     * @param {{ focused?: boolean; asPopup?: boolean }} [options] — default focused: false
      */
     async createWindowWithTab(tabId, options = {}) {
         return this.sendMessage("CREATE_WINDOW", {
             tabId,
             focused: options.focused === true,
+            asPopup: options.asPopup === true,
         });
     },
 
     /**
      * Move multiple tabs from the same window into a new window (order preserved).
      * @param {number[]} tabIds
-     * @param {{ focused?: boolean }} [options]
+     * @param {{ focused?: boolean; asPopup?: boolean }} [options]
      */
     async createWindowWithTabs(tabIds, options = {}) {
         return this.sendMessage("CREATE_WINDOW", {
             tabIds,
             focused: options.focused === true,
+            asPopup: options.asPopup === true,
         });
+    },
+
+    /**
+     * @param {number} tabId
+     * @param {string} url
+     */
+    async updateTabUrl(tabId, url) {
+        return this.sendMessage("UPDATE_TAB_URL", { tabId, url });
     },
 
     async copyTabUrl(tabId) {
@@ -134,18 +186,11 @@ export const chromeService = {
 
     async getSessionsOtherDevices() {
         const r = await this.sendMessage("GET_SESSIONS_OTHER_DEVICES");
-        if (r && typeof r === "object" && r.error) {
-            throw new Error(r.error);
-        }
         return Array.isArray(r) ? r : [];
     },
 
     async restoreSession(sessionId) {
-        const r = await this.sendMessage("RESTORE_SESSION", { sessionId });
-        if (r && typeof r === "object" && r.error) {
-            throw new Error(r.error);
-        }
-        return r;
+        return this.sendMessage("RESTORE_SESSION", { sessionId });
     },
 
     async createEmptyWindow() {
@@ -173,15 +218,32 @@ export const chromeService = {
     },
 
     async getRecentHistory() {
-        return this.sendMessage('GET_RECENT_HISTORY');
+        const r = await this.sendMessage("GET_RECENT_HISTORY");
+        return Array.isArray(r) ? r : [];
+    },
+
+    async getRecentDownloads() {
+        const r = await this.sendMessage("GET_RECENT_DOWNLOADS");
+        return Array.isArray(r) ? r : [];
+    },
+
+    async openDownload(downloadId) {
+        return this.sendMessage("OPEN_DOWNLOAD", { downloadId });
+    },
+
+    async getReadingList() {
+        const r = await this.sendMessage("GET_READING_LIST");
+        return Array.isArray(r) ? r : [];
     },
 
     async getBookmarksBar() {
-        return this.sendMessage('GET_BOOKMARKS_BAR');
+        const r = await this.sendMessage("GET_BOOKMARKS_BAR");
+        return Array.isArray(r) ? r : [];
     },
 
     async getAllBookmarks() {
-        return this.sendMessage('GET_ALL_BOOKMARKS');
+        const r = await this.sendMessage("GET_ALL_BOOKMARKS");
+        return Array.isArray(r) ? r : [];
     },
 
     async appsGetState() {
@@ -210,6 +272,17 @@ export const chromeService = {
             appIdB,
             title,
         });
+    },
+
+    async appsMoveAppIntoFolder(appId, intoFolderId) {
+        return this.sendMessage("APPS_MOVE_APP_INTO_FOLDER", {
+            appId,
+            intoFolderId,
+        });
+    },
+
+    async appsMoveAppToHomeRoot(appId) {
+        return this.sendMessage("APPS_MOVE_APP_TO_HOME_ROOT", { appId });
     },
 
     async appsRemoveFromHome(appId) {

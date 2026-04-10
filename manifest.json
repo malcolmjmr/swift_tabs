@@ -9,6 +9,8 @@
         "tabGroups",
         "bookmarks",
         "history",
+        "downloads",
+        "readingList",
         "sessions",
         "storage",
         "unlimitedStorage",
@@ -36,5 +38,8 @@
         "<all_urls>",
         "https://generativelanguage.googleapis.com/*"
     ],
-    "options_page": "options.html"
+    "options_page": "options.html",
+    "chrome_url_overrides": {
+        "newtab": "newtab.html"
+    }
 }

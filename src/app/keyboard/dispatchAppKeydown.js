@@ -2,6 +2,7 @@ import { isInTypingContext } from "../domUtils.js";
 import { applyLongPressTimerClearsOnKeydown } from "./longPressClear.js";
 import { tryTypingContextNavSpace } from "./tryTypingContextNavSpace.js";
 import { tryGlobalMenuShortcuts } from "./globalMenuShortcuts.js";
+import { tryMoveAddressShortcuts } from "./tryMoveAddressShortcuts.js";
 import { tryNavSfxSpaceEscape } from "./navSfxSpaceEscape.js";
 import { tryGlobalIdleTabShortcuts } from "./globalIdleTabShortcuts.js";
 import { tryNavModeMoreKeys } from "./navModeMoreKeys.js";
@@ -14,6 +15,14 @@ import { tryCommaDotAndTextSelection } from "./commaDotTextSelection.js";
  */
 export async function dispatchAppKeydown(event, ctx) {
     if (tryTypingContextNavSpace(event, ctx)) return;
+    if (
+        event.metaKey &&
+        event.key !== "Meta" &&
+        event.key !== "OS" &&
+        !event.repeat
+    ) {
+        ctx.setMetaShortcutCombo?.(true);
+    }
     if (isInTypingContext()) {
         applyLongPressTimerClearsOnKeydown(event, ctx);
         const isSpace = event.key === " " || event.code === "Space";
@@ -24,6 +33,7 @@ export async function dispatchAppKeydown(event, ctx) {
         applyLongPressTimerClearsOnKeydown(event, ctx);
     }
     if (tryGlobalMenuShortcuts(event, ctx)) return;
+    if (tryMoveAddressShortcuts(event, ctx)) return;
     if (await tryNavSfxSpaceEscape(event, ctx)) return;
     if (await tryGlobalIdleTabShortcuts(event, ctx)) return;
     if (await tryNavModeMoreKeys(event, ctx)) return;

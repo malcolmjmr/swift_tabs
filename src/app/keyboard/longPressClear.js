@@ -3,12 +3,12 @@
  * @param {{
  *   getSpaceLongPressTimer(): * | null;
  *   clearSpaceLongPressTimer(): void;
- *   getMetaLongPressTimer(): * | null;
- *   clearMetaLongPressTimer(): void;
  *   getAltLongPressTimer(): * | null;
  *   clearAltLongPressTimer(): void;
  *   getCtrlLongPressTimer(): * | null;
  *   clearCtrlLongPressTimer(): void;
+ *   getNLongPressTimer(): * | null;
+ *   clearNLongPressTimer(): void;
  * }} ctx
  */
 export function applyLongPressTimerClearsOnKeydown(event, ctx) {
@@ -18,14 +18,6 @@ export function applyLongPressTimerClearsOnKeydown(event, ctx) {
         event.key !== " "
     ) {
         ctx.clearSpaceLongPressTimer();
-    }
-    if (
-        ctx.getMetaLongPressTimer() &&
-        event.metaKey &&
-        event.key !== "Meta" &&
-        event.key !== "OS"
-    ) {
-        ctx.clearMetaLongPressTimer();
     }
     if (
         ctx.getAltLongPressTimer() &&
@@ -40,5 +32,13 @@ export function applyLongPressTimerClearsOnKeydown(event, ctx) {
         event.key !== "Control"
     ) {
         ctx.clearCtrlLongPressTimer();
+    }
+    if (
+        ctx.getNLongPressTimer() &&
+        !((event.key === "n" || event.key === "N") && event.repeat) &&
+        event.key !== "n" &&
+        event.key !== "N"
+    ) {
+        ctx.clearNLongPressTimer();
     }
 }

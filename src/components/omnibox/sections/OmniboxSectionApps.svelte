@@ -1,11 +1,9 @@
 <script>
     import { createEventDispatcher } from "svelte";
     import { chromeService } from "../../../services/chromeApi";
-    import {
-        getResultFaviconSrc,
-        getResultIcon,
-        isSwiftAppsRow,
-    } from "../omniboxShared.js";
+    import { getResultFaviconSrc, isSwiftAppsRow } from "../omniboxShared.js";
+    import OmniboxAppsIconTileApp from "./OmniboxAppsIconTileApp.svelte";
+    import OmniboxAppsIconTileFolder from "./OmniboxAppsIconTileFolder.svelte";
 
     const dispatch = createEventDispatcher();
 
@@ -40,7 +38,6 @@
     /** @type {object[]} */
     export let visibleResults = [];
     export let selectedResultIndex = 0;
-    export let appsEditMode = false;
     /** @type {Record<string, boolean>} */
     export let faviconFailedByKey = {};
     /** @type {HTMLElement | undefined} */
@@ -59,15 +56,22 @@
     export let onAppsDragOver = () => {};
     /** @param {number} i @param {object} item @param {DragEvent} e */
     export let onAppsDrop = () => {};
+    export let onAppsDragEnd = () => {};
     /** @param {number} i @param {object} item */
     export let onResultRowClick = () => {};
     /** @param {number} i @param {object} item */
     export let onResultRowDblClick = () => {};
 
+    export let showDropToHomeRail = false;
+    /** @param {DragEvent} e */
+    export let onAppsDragOverHomeRail = () => {};
+    /** @param {DragEvent} e */
+    export let onAppsDropHomeRail = () => {};
+
     function appsIconShortLabel(item) {
         if (!item) return "";
         if (item.type === "stFolder") {
-            return item.folder?.title || "Folder";
+            return item.folder?.title || "";
         }
         if (item.type === "stAllApps") return "All apps";
         const app = item.app;
@@ -81,9 +85,7 @@
 
 {#if mode === "detail"}
     <div class="apps-detail-panel">
-        <div class="news-detail-hint">
-            Backspace — back · Space — open site
-        </div>
+        <div class="news-detail-hint">Backspace — back · Space — open site</div>
         <div class="apps-detail-scroll">
             {#if appsRegistryById[detailAppId]}
                 {@const dapp = appsRegistryById[detailAppId]}
@@ -200,12 +202,13 @@
                         {appsSuggestionsLoading ? "Loading…" : "Refresh"}
                     </button>
                     {#if appsSuggestionsError}
-                        <div class="news-detail-error">{appsSuggestionsError}</div>
+                        <div class="news-detail-error">
+                            {appsSuggestionsError}
+                        </div>
                     {/if}
                     {#if appsDetailSuggestionsText}
-                        <pre class="apps-suggestions-text"
-                            >{appsDetailSuggestionsText}</pre
-                        >
+                        <pre
+                            class="apps-suggestions-text">{appsDetailSuggestionsText}</pre>
                     {/if}
                 {/if}
             {:else}
@@ -215,53 +218,71 @@
     </div>
 {:else}
     <div class="apps-icon-scroll">
+        {#if showDropToHomeRail}
+            <div
+                class="apps-drop-home-rail"
+                role="region"
+                aria-label="Drop to move app to home"
+                on:dragover={(e) => onAppsDragOverHomeRail(e)}
+                on:drop={(e) => onAppsDropHomeRail(e)}
+            >
+                Drop here to move to home
+            </div>
+        {/if}
         <div class="apps-icon-flow" bind:this={appsIconFlowEl}>
             {#each visibleResults as item, i}
-                {@const faviconUrl = getResultFaviconSrc(item, faviconFailedByKey)}
+                {@const faviconUrl = getResultFaviconSrc(
+                    item,
+                    faviconFailedByKey,
+                )}
                 {@const swift = isSwiftAppsRow(item)}
-                <button
-                    type="button"
-                    role="option"
-                    class="apps-icon-tile"
-                    class:selected={selectedResultIndex === i}
-                    class:apps-icon-tile--draggable={swift &&
-                        appsEditMode &&
-                        item.type !== "stAllApps"}
-                    aria-selected={selectedResultIndex === i}
-                    draggable={swift &&
-                        appsEditMode &&
-                        item.type !== "stAllApps"}
-                    on:pointerdown={(e) => onAppsIconPointerDown(i, item, e)}
-                    on:pointerup={onAppsIconPointerUpCancel}
-                    on:pointerleave={onAppsIconPointerUpCancel}
-                    on:pointercancel={onAppsIconPointerUpCancel}
-                    on:dragstart={(e) => onAppsDragStart(i, item, e)}
-                    on:dragover={(e) => onAppsDragOver(i, e)}
-                    on:drop={(e) => onAppsDrop(i, item, e)}
-                    on:click={() => onResultRowClick(i, item)}
-                    on:dblclick|preventDefault={() =>
-                        onResultRowDblClick(i, item)}
-                >
-                    {#if item.type === "stFolder"}
-                        <span class="material-symbols-rounded apps-icon-flow-glyph"
-                            >folder</span
-                        >
-                    {:else if faviconUrl}
-                        <img
-                            class="apps-icon-flow-img"
-                            src={faviconUrl}
-                            alt=""
-                            on:error={() => onFaviconError(item)}
-                        />
-                    {:else}
-                        <span class="material-symbols-rounded apps-icon-flow-glyph">
-                            {getResultIcon(item)}
-                        </span>
-                    {/if}
-                    <span class="apps-icon-flow-label"
-                        >{appsIconShortLabel(item)}</span
-                    >
-                </button>
+                {@const tileUid =
+                    item.type === "stFolder"
+                        ? `omnibox-apps-f-${item.folder?.id ?? i}`
+                        : item.type === "stAllApps"
+                          ? "omnibox-apps-all"
+                          : `omnibox-apps-a-${item.app?.id ?? i}`}
+                {@const tileTitle = appsIconShortLabel(item)}
+                {#if item.type === "stFolder" || item.type === "stAllApps"}
+                    <OmniboxAppsIconTileFolder
+                        {i}
+                        {item}
+                        {tileUid}
+                        {tileTitle}
+                        previewApps={item.folderPreviewApps || []}
+                        selected={selectedResultIndex === i}
+                        {swift}
+                        {faviconFailedByKey}
+                        {onAppsIconPointerDown}
+                        {onAppsIconPointerUpCancel}
+                        {onAppsDragStart}
+                        {onAppsDragOver}
+                        {onAppsDrop}
+                        {onAppsDragEnd}
+                        {onResultRowClick}
+                        {onResultRowDblClick}
+                        {onFaviconError}
+                    />
+                {:else}
+                    <OmniboxAppsIconTileApp
+                        {i}
+                        {item}
+                        {tileUid}
+                        {tileTitle}
+                        selected={selectedResultIndex === i}
+                        {swift}
+                        {faviconUrl}
+                        {onAppsIconPointerDown}
+                        {onAppsIconPointerUpCancel}
+                        {onAppsDragStart}
+                        {onAppsDragOver}
+                        {onAppsDrop}
+                        {onAppsDragEnd}
+                        {onResultRowClick}
+                        {onResultRowDblClick}
+                        {onFaviconError}
+                    />
+                {/if}
             {/each}
         </div>
     </div>
@@ -277,69 +298,23 @@
         -webkit-overflow-scrolling: touch;
     }
 
+    .apps-drop-home-rail {
+        margin-bottom: 10px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px dashed var(--st-border-color, rgba(255, 255, 255, 0.2));
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.05));
+        font-size: 12px;
+        text-align: center;
+        color: var(--st-text-muted, #aaa);
+    }
+
     .apps-icon-flow {
         display: flex;
         flex-flow: row wrap;
         align-content: flex-start;
         justify-content: flex-start;
-        gap: 12px 8px;
-    }
-
-    .apps-icon-tile {
-        box-sizing: border-box;
-        width: 76px;
-        flex: 0 0 76px;
-        max-width: 76px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 2px 8px;
-        border: none;
-        background: transparent;
-        border-radius: 14px;
-        cursor: pointer;
-        color: var(--st-text-primary, #fff);
-        font-family: inherit;
-        transition: background 0.12s;
-    }
-
-    .apps-icon-tile:hover,
-    .apps-icon-tile.selected {
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
-    }
-
-    .apps-icon-flow-img {
-        width: 48px;
-        height: 48px;
-        border-radius: 11px;
-        object-fit: contain;
-        flex-shrink: 0;
-    }
-
-    .apps-icon-flow-glyph {
-        font-size: 44px;
-        line-height: 1;
-        color: var(--st-text-muted, #aaa);
-        font-variation-settings:
-            "FILL" 0,
-            "wght" 400,
-            "GRAD" 0,
-            "opsz" 48;
-    }
-
-    .apps-icon-flow-label {
-        font-size: 10px;
-        line-height: 1.25;
-        text-align: center;
-        max-width: 100%;
-        overflow: hidden;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        word-break: break-word;
-        color: var(--st-text-primary, #eee);
+        gap: 20px 20px;
     }
 
     .apps-detail-panel {
@@ -354,7 +329,8 @@
         padding: 8px 12px;
         font-size: 11px;
         color: var(--st-text-muted, #888);
-        border-bottom: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.08));
+        border-bottom: 1px solid
+            var(--st-border-color, rgba(255, 255, 255, 0.08));
     }
 
     .apps-detail-scroll {

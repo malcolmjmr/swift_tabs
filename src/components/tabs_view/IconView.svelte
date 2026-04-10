@@ -64,6 +64,11 @@
                         >
                     {/if}
                     <TabItemBadges {tab} variant="overlay" />
+                    {#if selectedTab?.id === tab.id || multiSelectedIds.includes(tab.id)}
+                        <span class="icon-cmd-hint" title="Command menu"
+                            >⌘</span
+                        >
+                    {/if}
                 </div>
             </div>
         {/each}
@@ -154,5 +159,18 @@
             inset 0 0 0 2px rgba(120, 200, 255, 0.55),
             inset 0 0 0 1px transparent;
         opacity: 1;
+    }
+
+    .icon-cmd-hint {
+        position: absolute;
+        right: -4px;
+        bottom: -4px;
+        font-size: 13px;
+        line-height: 1;
+        font-weight: 600;
+        color: var(--st-text-muted, #aaa);
+        opacity: 0.95;
+        user-select: none;
+        pointer-events: none;
     }
 </style>

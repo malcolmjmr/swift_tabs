@@ -60,6 +60,11 @@
                 {/if}
                 <div class="list-view-item-title">{tab.title}</div>
                 <TabItemBadges {tab} variant="inline" />
+                {#if selectedTab?.id === tab.id || multiSelectedIds.includes(tab.id)}
+                    <span class="list-view-cmd-hint" title="Command menu"
+                        >⌘</span
+                    >
+                {/if}
             </div>
         {/each}
         <div class="list-view-padding"></div>
@@ -167,5 +172,16 @@
 
     .list-view-padding {
         height: 3px;
+    }
+
+    .list-view-cmd-hint {
+        flex-shrink: 0;
+        font-size: 17px;
+        line-height: 1;
+        font-weight: 600;
+        color: var(--st-text-muted, #888);
+        opacity: 0.85;
+        user-select: none;
+        margin-left: 4px;
     }
 </style>
