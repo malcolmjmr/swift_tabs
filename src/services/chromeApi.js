@@ -302,6 +302,24 @@ export const chromeService = {
     },
 
     /**
+     * @param {string} title
+     * @param {string | null} [parentFolderId]
+     */
+    async appsCreateFolder(title, parentFolderId = null) {
+        return this.sendMessage("APPS_CREATE_FOLDER", {
+            title,
+            parentFolderId,
+        });
+    },
+
+    /**
+     * @param {{ domainOrUrl: string, title?: string, addTo?: 'library' | 'home' | string }} opts
+     */
+    async appsRegisterApp(opts) {
+        return this.sendMessage("APPS_REGISTER_APP", opts);
+    },
+
+    /**
      * @param {'app'|'folder'} scope
      * @param {string} id — app id or folder id
      * @param {string} routineId

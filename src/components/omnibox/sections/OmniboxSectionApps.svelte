@@ -1,5 +1,6 @@
 <script>
     import { getResultFaviconSrc, isSwiftAppsRow } from "../omniboxShared.js";
+    import OmniboxAppsIconTileAdd from "./OmniboxAppsIconTileAdd.svelte";
     import OmniboxAppsIconTileApp from "./OmniboxAppsIconTileApp.svelte";
     import OmniboxAppsIconTileFolder from "./OmniboxAppsIconTileFolder.svelte";
 
@@ -36,12 +37,15 @@
     /** @param {DragEvent} e */
     export let onAppsDropHomeRail = () => {};
 
+    export let showAddTile = false;
+    export let addTileAriaLabel = "Add";
+    export let onAddTileActivate = () => {};
+
     function appsIconShortLabel(item) {
         if (!item) return "";
         if (item.type === "stFolder") {
             return item.folder?.title || "";
         }
-        if (item.type === "stRecent") return "Recent";
         if (item.type === "stAllApps") return "All apps";
         const app = item.app;
         if (!app) return "";
@@ -71,13 +75,11 @@
             {@const tileUid =
                 item.type === "stFolder"
                     ? `omnibox-apps-f-${item.folder?.id ?? i}`
-                    : item.type === "stRecent"
-                      ? "omnibox-apps-recent"
-                      : item.type === "stAllApps"
-                        ? "omnibox-apps-all"
-                        : `omnibox-apps-a-${item.app?.id ?? i}`}
+                    : item.type === "stAllApps"
+                      ? "omnibox-apps-all"
+                      : `omnibox-apps-a-${item.app?.id ?? i}`}
             {@const tileTitle = appsIconShortLabel(item)}
-            {#if item.type === "stFolder" || item.type === "stRecent" || item.type === "stAllApps"}
+            {#if item.type === "stFolder" || item.type === "stAllApps"}
                 <OmniboxAppsIconTileFolder
                     {i}
                     {item}
@@ -103,6 +105,7 @@
                     {item}
                     {tileUid}
                     {tileTitle}
+                    queueCount={(item.app?.savedLinks || []).length}
                     selected={selectedResultIndex === i}
                     {swift}
                     {faviconUrl}
@@ -118,6 +121,12 @@
                 />
             {/if}
         {/each}
+        {#if showAddTile}
+            <OmniboxAppsIconTileAdd
+                ariaLabel={addTileAriaLabel}
+                onActivate={onAddTileActivate}
+            />
+        {/if}
     </div>
 </div>
 

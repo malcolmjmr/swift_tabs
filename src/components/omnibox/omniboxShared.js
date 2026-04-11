@@ -33,7 +33,6 @@ export function getResultIcon(item) {
         stApp: "apps",
         stLibApp: "apps",
         stFolder: "folder",
-        stRecent: "history",
         stAllApps: "library_books",
         tab: "tab",
         bookmark: "bookmark",
@@ -119,7 +118,6 @@ export function isSwiftAppsRow(item) {
     return (
         t === "stApp" ||
         t === "stFolder" ||
-        t === "stRecent" ||
         t === "stAllApps" ||
         t === "stLibApp"
     );

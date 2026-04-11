@@ -31,6 +31,9 @@
     /** @param {object} it */
     export let onFaviconError = () => {};
 
+    /** Saved links / queue length for this app */
+    export let queueCount = 0;
+
     $: draggable =
         swift && item.type !== "stAllApps" && item.type !== "stLibApp";
 
@@ -63,6 +66,13 @@
         on:click={() => onResultRowClick(i, item)}
         on:dblclick|preventDefault={() => onResultRowDblClick(i, item)}
     >
+        {#if queueCount > 0}
+            <span
+                class="apps-icon-queue-badge"
+                aria-label={`${queueCount} queued links`}
+                >{queueCount > 99 ? "99+" : queueCount}</span
+            >
+        {/if}
         {#if faviconUrl}
             <img
                 class="apps-icon-flow-img"
@@ -97,6 +107,7 @@
     }
 
     .apps-icon-tile {
+        position: relative;
         box-sizing: border-box;
         width: 76px;
         height: 76px;
@@ -115,6 +126,26 @@
         color: var(--st-text-primary, #fff);
         font-family: inherit;
         transition: background 0.12s;
+    }
+
+    .apps-icon-queue-badge {
+        position: absolute;
+        bottom: 12px;
+        right: 12px;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1;
+        background: rgba(200, 80, 80, 0.95);
+        color: #fff;
+        box-shadow: 0 0 0 2px #222;
+        pointer-events: none;
     }
 
     .apps-icon-tile:hover,

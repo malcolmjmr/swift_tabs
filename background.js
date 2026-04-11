@@ -1,5 +1,6 @@
 import {
     appsAddAppToHomeEnd,
+    appsCreateEmptyFolder,
     appsDeleteApp,
     appsDiscoverMissingFromHistory,
     appsGetState,
@@ -9,6 +10,7 @@ import {
     appsPutApp,
     appsPutLayout,
     appsRecomputeAccessBlockList,
+    appsRegisterOrEnsureApp,
     appsRemoveFromHome,
 } from "./src/services/apps/appsBackground.js";
 import {
@@ -1073,6 +1075,28 @@ const chromeApiHandlers = {
     async APPS_REMOVE_FROM_HOME({ appId }) {
         await appsRemoveFromHome(appId);
         return { ok: true };
+    },
+
+    async APPS_CREATE_FOLDER({ title, parentFolderId } = {}) {
+        const folder = await appsCreateEmptyFolder(
+            typeof title === "string" ? title : "Folder",
+            parentFolderId || null,
+        );
+        return { folder };
+    },
+
+    /**
+     * @param {{ domainOrUrl: string, title?: string, addTo?: string }} p
+     */
+    async APPS_REGISTER_APP({ domainOrUrl, title, addTo } = {}) {
+        const raw = typeof domainOrUrl === "string" ? domainOrUrl : "";
+        /** @type {'registry_only' | 'home_end' | { folderId: string }} */
+        let placement = "registry_only";
+        if (addTo === "home") placement = "home_end";
+        else if (typeof addTo === "string" && addTo.startsWith("fld_")) {
+            placement = { folderId: addTo };
+        }
+        return appsRegisterOrEnsureApp(raw, title, placement);
     },
 
     async LINK_QUEUE_PUSH({ url, title }, sender) {

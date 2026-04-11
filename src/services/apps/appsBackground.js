@@ -70,7 +70,8 @@ export async function appsGetLayout() {
 }
 
 /**
- * Remove folders whose items array is empty after pruning children.
+ * Recursively normalize folder trees for persist. Empty folders are kept so
+ * newly created or cleared folders still appear on home (they have items: []).
  *
  * @param {import('./appsModel.js').LayoutItem[]} items
  * @returns {import('./appsModel.js').LayoutItem[]}
@@ -81,7 +82,6 @@ export function pruneEmptyFolders(items) {
     for (const it of items) {
         if (it.kind === "folder") {
             const inner = pruneEmptyFolders(it.items || []);
-            if (inner.length === 0) continue;
             out.push({ ...it, items: inner });
         } else {
             out.push(it);
@@ -463,6 +463,150 @@ export async function appsMergeIntoFolder(appIdA, appIdB, title = "Folder") {
     items.push(folder);
     await appsPutLayout({ ...layout, items });
     return folder;
+}
+
+/**
+ * @param {import('./appsModel.js').LayoutItem[]} items
+ * @param {string} parentFolderId
+ * @param {import('./appsModel.js').LayoutFolder} newFolder
+ * @returns {{ items: import('./appsModel.js').LayoutItem[], inserted: boolean }}
+ */
+function insertFolderIntoParent(items, parentFolderId, newFolder) {
+    let inserted = false;
+    /** @param {import('./appsModel.js').LayoutItem[]} arr */
+    function walk(arr) {
+        return arr.map((it) => {
+            if (it.kind === "folder" && it.id === parentFolderId) {
+                inserted = true;
+                return {
+                    ...it,
+                    items: [...(it.items || []), newFolder],
+                };
+            }
+            if (it.kind === "folder") {
+                return { ...it, items: walk(it.items || []) };
+            }
+            return it;
+        });
+    }
+    const next = walk(items);
+    return { items: next, inserted };
+}
+
+/**
+ * @param {string} title
+ * @param {string | null | undefined} parentFolderId — omit or null for home root
+ * @returns {Promise<import('./appsModel.js').LayoutFolder>}
+ */
+export async function appsCreateEmptyFolder(title, parentFolderId) {
+    const layout = await appsGetLayout();
+    const folder = {
+        kind: "folder",
+        id: newFolderId(),
+        title: (title || "").trim() || "Folder",
+        items: [],
+    };
+    if (!parentFolderId) {
+        await appsPutLayout({
+            ...layout,
+            items: [...(layout.items || []), folder],
+        });
+        return folder;
+    }
+    const { items, inserted } = insertFolderIntoParent(
+        layout.items || [],
+        parentFolderId,
+        folder,
+    );
+    if (!inserted) {
+        console.warn(
+            "appsCreateEmptyFolder: parent folder not found, added at home root",
+        );
+        await appsPutLayout({
+            ...layout,
+            items: [...(layout.items || []), folder],
+        });
+    } else {
+        await appsPutLayout({ ...layout, items });
+    }
+    return folder;
+}
+
+/**
+ * @param {string} raw
+ * @returns {string}
+ */
+function domainFromUserInput(raw) {
+    const t = (raw || "").trim();
+    if (!t) return "";
+    let d = normalizeDomain(t);
+    if (d) return d;
+    try {
+        const u = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`);
+        return normalizeDomain(u.hostname);
+    } catch {
+        return "";
+    }
+}
+
+/**
+ * Register or update an app in the registry and optionally place it on the layout.
+ *
+ * @param {string} domainOrUrl
+ * @param {string} [displayTitle]
+ * @param {'registry_only' | 'home_end' | { folderId: string }} placement
+ */
+export async function appsRegisterOrEnsureApp(
+    domainOrUrl,
+    displayTitle,
+    placement,
+) {
+    const domain = domainFromUserInput(domainOrUrl);
+    if (!domain) {
+        throw new Error("invalid_domain");
+    }
+    const id = appIdFromDomain(domain);
+    const existing = await appsGet(id);
+    const titleTrim = (displayTitle || "").trim();
+    const titleBase = titleTrim || existing?.title || domain;
+
+    if (!existing) {
+        await appsPutApp({
+            id,
+            domain,
+            defaultUrl: defaultUrlForDomain(domain),
+            title: titleBase,
+            savedLinks: [],
+        });
+    } else if (titleTrim && titleTrim !== (existing.displayTitle || "")) {
+        await appsPutApp({
+            id,
+            displayTitle: titleTrim,
+        });
+    }
+
+    const layout = await appsGetLayout();
+    if (placement === "registry_only") {
+        return { appId: id, created: !existing };
+    }
+    if (placement === "home_end") {
+        if (!layoutRefersToApp(layout.items, id)) {
+            layout.items = [...(layout.items || []), { kind: "app", appId: id }];
+            await appsPutLayout(layout);
+        }
+        return { appId: id, created: !existing };
+    }
+    if (placement && typeof placement === "object" && placement.folderId) {
+        const removed = removeAppRef(layout.items, id);
+        const inserted = insertAppIntoFolder(
+            removed,
+            placement.folderId,
+            id,
+        );
+        await appsPutLayout({ ...layout, items: inserted });
+        return { appId: id, created: !existing };
+    }
+    return { appId: id, created: !existing };
 }
 
 /**

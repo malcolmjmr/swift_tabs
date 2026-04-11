@@ -562,6 +562,21 @@ export const chromeService = {
         return { ok: true };
     },
 
+    async appsCreateFolder() {
+        return {
+            folder: {
+                kind: "folder",
+                id: "fld_demo",
+                title: "Folder",
+                items: [],
+            },
+        };
+    },
+
+    async appsRegisterApp() {
+        return { appId: "app_demo", created: true };
+    },
+
     async appsRunRoutine() {
         return { ok: true };
     },

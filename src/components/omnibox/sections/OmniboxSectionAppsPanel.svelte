@@ -8,6 +8,12 @@
         resultFaviconKey,
     } from "../omniboxShared.js";
     import { collectFirstAppsFromFolder } from "./appsFolderPreview.js";
+    import {
+        collectFolderTitlesFromLayout,
+        suggestAppEntries,
+        suggestFolderNames,
+    } from "./omniboxAppsSuggestions.js";
+    import OmniboxAppsCreateModal from "./OmniboxAppsCreateModal.svelte";
     import OmniboxAppsFolderModal from "./OmniboxAppsFolderModal.svelte";
     import OmniboxSectionApps from "./OmniboxSectionApps.svelte";
     import OmniboxSectionAppsDetailPanel from "./OmniboxSectionAppsDetailPanel.svelte";
@@ -27,7 +33,7 @@
     /** @type {object[]} */
     let appsRegistryList = [];
     let appsLayout = { version: 1, items: [] };
-    /** @type {'home' | 'folder' | 'recent' | 'detail' | 'folderDetail' | 'library'} */
+    /** @type {'home' | 'folder' | 'detail' | 'folderDetail' | 'library'} */
     let appsView = "home";
     /** @type {{ title: string, items: object[] }[]} */
     let appsFolderStack = [];
@@ -50,6 +56,18 @@
     let libraryRefreshBusy = false;
     /** @type {string} */
     let libraryRefreshHint = "";
+
+    /** @type {'recent' | 'alpha'} */
+    let librarySortMode = "recent";
+
+    /** @type {'folder' | 'app' | null} */
+    let createModalMode = null;
+    let createModalLoading = false;
+    /** @type {string[]} */
+    let createFolderSuggestions = [];
+    /** @type {{ label: string, domain: string }[]} */
+    let createAppSuggestions = [];
+    let createModalError = "";
 
     /** @type {object[]} */
     let visibleResults = [];
@@ -75,9 +93,22 @@
         detailAppId = null;
         detailFolderId = null;
         folderModalRoot = null;
+        createModalMode = null;
+        createModalError = "";
     }
 
-    $: debouncedQuery, applyAppsVisibleResults();
+    $: debouncedQuery, librarySortMode, applyAppsVisibleResults();
+
+    $: showAppsAddTile =
+        isAppsIconFlowView() &&
+        (appsView === "home" || appsView === "folder" || appsView === "library");
+
+    $: addTileAriaLabel =
+        appsView === "home"
+            ? "New folder"
+            : appsView === "library"
+              ? "Register new app"
+              : "Add app to this folder";
 
     /** @param {object[]} items @param {string} folderId */
     function findFolderInTree(items, folderId) {
@@ -159,18 +190,62 @@
         return (
             appsView === "home" ||
             appsView === "folder" ||
-            appsView === "recent" ||
             appsView === "library"
         );
     }
 
-    /** @param {string} q */
-    function recentFolderVisibleForQuery(q) {
-        if (recentHistoryPreview.length === 0) return false;
-        if (!q) return true;
-        return recentHistoryPreview.some(
-            (app) =>
-                matchesAppQuery(app, q) && !appHiddenFromHomeStrip(app),
+    /**
+     * @param {Map<string, number>} historyRank
+     * @param {object} a
+     * @param {object} b
+     */
+    function compareAppsLibraryRecent(a, b, historyRank) {
+        const ta = a.lastOpenedAt || 0;
+        const tb = b.lastOpenedAt || 0;
+        if (tb !== ta) return tb - ta;
+        const ra = historyRank.get(a.id);
+        const rb = historyRank.get(b.id);
+        if (ra !== rb) return (ra ?? 1e9) - (rb ?? 1e9);
+        const na = (
+            a.displayTitle ||
+            a.title ||
+            a.domain ||
+            ""
+        ).toLowerCase();
+        const nb = (
+            b.displayTitle ||
+            b.title ||
+            b.domain ||
+            ""
+        ).toLowerCase();
+        return na.localeCompare(nb);
+    }
+
+    /** @param {object} a @param {object} b */
+    function compareAppsLibraryAlpha(a, b) {
+        const na = (
+            a.displayTitle ||
+            a.title ||
+            a.domain ||
+            ""
+        ).toLowerCase();
+        const nb = (
+            b.displayTitle ||
+            b.title ||
+            b.domain ||
+            ""
+        ).toLowerCase();
+        return na.localeCompare(nb);
+    }
+
+    function getSortedLibraryApps() {
+        const historyRank = new Map(
+            recentHistoryPreview.map((a, idx) => [a.id, idx]),
+        );
+        return [...appsRegistryList].sort((a, b) =>
+            librarySortMode === "alpha"
+                ? compareAppsLibraryAlpha(a, b)
+                : compareAppsLibraryRecent(a, b, historyRank),
         );
     }
 
@@ -278,16 +353,11 @@
             appsSuppressNextClick = true;
             selectedResultIndex = i;
             if (item.type === "stApp") {
-                openAppsDetail(
-                    item.app.id,
-                    appsView === "recent" ? "recent" : undefined,
-                );
+                openAppsDetail(item.app.id, undefined);
             } else if (item.type === "stLibApp") {
                 openAppsDetail(item.app.id, "library");
             } else if (item.type === "stFolder") {
                 openFolderDetail(item.folder.id);
-            } else if (item.type === "stRecent") {
-                openRecentAppsBrowse();
             } else if (item.type === "stAllApps") {
                 openAppsLibrary();
             }
@@ -332,17 +402,6 @@
 
     function buildAppsHomeRows(q) {
         const rows = [];
-        if (recentFolderVisibleForQuery(q)) {
-            const n = recentHistoryPreview.filter(
-                (a) => !appHiddenFromHomeStrip(a),
-            ).length;
-            rows.push({
-                type: "stRecent",
-                title: "Recent",
-                subtitle: `${n} from history`,
-                folderPreviewApps: recentHistoryPreview.slice(0, 9),
-            });
-        }
         for (const it of appsLayout.items || []) {
             if (it.kind === "app") {
                 const app = appsRegistryById[it.appId];
@@ -376,23 +435,8 @@
             type: "stAllApps",
             title: "All apps",
             subtitle: "Browse full library",
-            folderPreviewApps: recentHistoryPreview.slice(0, 9),
+            folderPreviewApps: getSortedLibraryApps().slice(0, 9),
         });
-        return rows;
-    }
-
-    function buildAppsRecentRows(q) {
-        const rows = [];
-        for (const app of recentHistoryPreview) {
-            if (!matchesAppQuery(app, q)) continue;
-            if (appHiddenFromHomeStrip(app)) continue;
-            rows.push({
-                type: "stApp",
-                app,
-                title: app.displayTitle || app.title || app.domain,
-                subtitle: app.domain,
-            });
-        }
         return rows;
     }
 
@@ -434,30 +478,7 @@
 
     function buildAppsLibraryRows(q) {
         const rows = [];
-        const historyRank = new Map(
-            recentHistoryPreview.map((a, idx) => [a.id, idx]),
-        );
-        const sorted = [...appsRegistryList].sort((a, b) => {
-            const ta = a.lastOpenedAt || 0;
-            const tb = b.lastOpenedAt || 0;
-            if (tb !== ta) return tb - ta;
-            const ra = historyRank.get(a.id);
-            const rb = historyRank.get(b.id);
-            if (ra !== rb) return (ra ?? 1e9) - (rb ?? 1e9);
-            const na = (
-                a.displayTitle ||
-                a.title ||
-                a.domain ||
-                ""
-            ).toLowerCase();
-            const nb = (
-                b.displayTitle ||
-                b.title ||
-                b.domain ||
-                ""
-            ).toLowerCase();
-            return na.localeCompare(nb);
-        });
+        const sorted = getSortedLibraryApps();
         for (const app of sorted) {
             //if (!matchesAppQuery(app, q)) continue;
             rows.push({
@@ -479,14 +500,6 @@
         }
         if (appsView === "library") {
             visibleResults = buildAppsLibraryRows(q);
-            selectedResultIndex = Math.min(
-                selectedResultIndex,
-                Math.max(0, visibleResults.length - 1),
-            );
-            return;
-        }
-        if (appsView === "recent") {
-            visibleResults = buildAppsRecentRows(q);
             selectedResultIndex = Math.min(
                 selectedResultIndex,
                 Math.max(0, visibleResults.length - 1),
@@ -534,6 +547,107 @@
         folderModalRoot = null;
     }
 
+    function closeCreateModal() {
+        createModalMode = null;
+        createModalError = "";
+        createModalLoading = false;
+    }
+
+    async function openCreateModal(/** @type {'folder'|'app'} */ mode) {
+        createModalMode = mode;
+        createModalError = "";
+        createModalLoading = true;
+        createFolderSuggestions = [];
+        createAppSuggestions = [];
+        try {
+            if (mode === "folder") {
+                createFolderSuggestions = await suggestFolderNames(
+                    collectFolderTitlesFromLayout(appsLayout),
+                );
+            } else if (appsView === "folder") {
+                const top = appsFolderStack[appsFolderStack.length - 1];
+                /** @type {{ domain: string, title: string }[]} */
+                const appsInFolder = [];
+                for (const ch of top?.items || []) {
+                    if (ch.kind === "app") {
+                        const a = appsRegistryById[ch.appId];
+                        if (a) {
+                            appsInFolder.push({
+                                domain: a.domain || "",
+                                title:
+                                    a.displayTitle ||
+                                    a.title ||
+                                    a.domain ||
+                                    "",
+                            });
+                        }
+                    }
+                }
+                createAppSuggestions = await suggestAppEntries({
+                    allRegistryApps: appsRegistryList,
+                    folderContext: {
+                        title: (top?.title || "").trim() || "Folder",
+                        appsInFolder,
+                    },
+                });
+            } else {
+                createAppSuggestions = await suggestAppEntries({
+                    allRegistryApps: appsRegistryList,
+                    folderContext: null,
+                });
+            }
+        } catch (e) {
+            console.warn("Omnibox: create suggestions", e);
+        } finally {
+            createModalLoading = false;
+        }
+    }
+
+    /** @param {{ kind: 'folder', name: string } | { kind: 'app', domain: string, title: string }} detail */
+    async function handleCreateModalConfirm(detail) {
+        createModalError = "";
+        try {
+            if (detail.kind === "folder") {
+                const parentId =
+                    appsView === "folder"
+                        ? appsFolderStack[appsFolderStack.length - 1]?.id ??
+                          null
+                        : null;
+                await chromeService.appsCreateFolder(detail.name, parentId);
+            } else {
+                /** @type {string} */
+                let addTo = "library";
+                if (appsView === "folder") {
+                    const fid =
+                        appsFolderStack[appsFolderStack.length - 1]?.id;
+                    if (!fid) {
+                        createModalError = "Open a folder first.";
+                        return;
+                    }
+                    addTo = fid;
+                }
+                await chromeService.appsRegisterApp({
+                    domainOrUrl: detail.domain,
+                    title: detail.title,
+                    addTo,
+                });
+            }
+            closeCreateModal();
+            await loadAppsState();
+        } catch (e) {
+            const msg =
+                e && typeof e === "object" && "message" in e
+                    ? String(/** @type {{ message?: string }} */ (e).message)
+                    : String(e);
+            if (msg.includes("invalid_domain")) {
+                createModalError =
+                    "Enter a valid domain or URL (e.g. nytimes.com).";
+            } else {
+                createModalError = msg || "Something went wrong.";
+            }
+        }
+    }
+
     async function modalLaunchApp(app) {
         await launchSwiftApp(app);
         closeFolderModal();
@@ -547,17 +661,10 @@
         selectedResultIndex = 0;
     }
 
-    function openRecentAppsBrowse() {
-        appsView = "recent";
-        applyAppsVisibleResults();
-        selectedResultIndex = 0;
-    }
-
-    /** @param {'home'|'folder'|'library'|'recent'|undefined} [fromCtx] */
+    /** @param {'home'|'folder'|'library'|undefined} [fromCtx] */
     function appsDetailOpenedFrom(fromCtx) {
         if (fromCtx) return fromCtx;
         if (appsView === "library") return "library";
-        if (appsView === "recent") return "recent";
         if (appsView === "folder") return "folder";
         return "home";
     }
@@ -566,19 +673,19 @@
         detailFolderId = null;
         detailAppId = appId;
         detailOpenedFrom = appsDetailOpenedFrom(
-            /** @type {'home'|'folder'|'library'|'recent'|undefined} */ (from),
+            /** @type {'home'|'folder'|'library'|undefined} */ (from),
         );
         appsView = "detail";
         visibleResults = [];
         selectedResultIndex = 0;
     }
 
-    /** @param {string} folderId @param {'home'|'folder'|'library'|'recent'|undefined} [from] */
+    /** @param {string} folderId @param {'home'|'folder'|'library'|undefined} [from] */
     function openFolderDetail(folderId, from) {
         detailAppId = null;
         detailFolderId = folderId;
         detailOpenedFrom = appsDetailOpenedFrom(
-            /** @type {'home'|'folder'|'library'|'recent'|undefined} */ (from),
+            /** @type {'home'|'folder'|'library'|undefined} */ (from),
         );
         appsView = "folderDetail";
         visibleResults = [];
@@ -664,10 +771,6 @@
             openFolderForBrowse(item.folder);
             return;
         }
-        if (item.type === "stRecent") {
-            openRecentAppsBrowse();
-            return;
-        }
         if (item.type === "stAllApps") {
             openAppsLibrary();
         }
@@ -679,20 +782,12 @@
         if (item.type === "stApp" || item.type === "stLibApp") {
             openAppsDetail(
                 item.app.id,
-                appsView === "library"
-                    ? "library"
-                    : appsView === "recent"
-                      ? "recent"
-                      : undefined,
+                appsView === "library" ? "library" : undefined,
             );
             return;
         }
         if (item.type === "stFolder") {
             openFolderForBrowse(item.folder);
-            return;
-        }
-        if (item.type === "stRecent") {
-            openRecentAppsBrowse();
             return;
         }
         if (item.type === "stAllApps") {
@@ -708,7 +803,6 @@
             return;
         }
         if (item.type === "stFolder") openFolderForBrowse(item.folder);
-        else if (item.type === "stRecent") openRecentAppsBrowse();
         else if (item.type === "stAllApps") openAppsLibrary();
     }
 
@@ -716,16 +810,11 @@
         if (item.type === "stApp" || item.type === "stLibApp") {
             openAppsDetail(
                 item.app.id,
-                item.type === "stLibApp"
-                    ? "library"
-                    : appsView === "recent"
-                      ? "recent"
-                      : undefined,
+                item.type === "stLibApp" ? "library" : undefined,
             );
             return;
         }
         if (item.type === "stFolder") openFolderForBrowse(item.folder);
-        else if (item.type === "stRecent") openRecentAppsBrowse();
         else if (item.type === "stAllApps") openAppsLibrary();
     }
 
@@ -748,7 +837,6 @@
         if (!isSwiftAppsRow(item)) return;
         if (
             item.type === "stAllApps" ||
-            item.type === "stRecent" ||
             item.type === "stLibApp" ||
             appsView === "library"
         )
@@ -811,7 +899,7 @@
         if (
             fromItem?.type === "stApp" &&
             toItem?.type === "stFolder" &&
-            appsView !== "recent"
+            (appsView === "home" || appsView === "folder")
         ) {
             await chromeService.appsMoveAppIntoFolder(
                 fromItem.app.id,
@@ -881,12 +969,7 @@
         if (from == null) return;
         const item = visibleResults[from];
         if (!item || !isSwiftAppsRow(item)) return;
-        if (
-            item.type === "stAllApps" ||
-            item.type === "stRecent" ||
-            item.type === "stLibApp"
-        )
-            return;
+        if (item.type === "stAllApps" || item.type === "stLibApp") return;
         if (appsView !== "home") return;
         if (item.type === "stApp") {
             await chromeService.appsRemoveFromHome(item.app.id);
@@ -899,8 +982,7 @@
 
     function homeRowIndexToLayoutIndex(rowIndex) {
         const item = visibleResults[rowIndex];
-        if (!item || item.type === "stAllApps" || item.type === "stRecent")
-            return -1;
+        if (!item || item.type === "stAllApps") return -1;
         const list =
             appsView === "home"
                 ? appsLayout.items || []
@@ -971,6 +1053,10 @@
 
     /** @returns {boolean} */
     export function handleOmniboxEscape() {
+        if (createModalMode) {
+            closeCreateModal();
+            return true;
+        }
         if (folderModalRoot) {
             closeFolderModal();
             return true;
@@ -991,11 +1077,6 @@
         if (appsView === "library") {
             appsView = "home";
             libraryRefreshHint = "";
-            applyAppsVisibleResults();
-            return true;
-        }
-        if (appsView === "recent") {
-            appsView = "home";
             applyAppsVisibleResults();
             return true;
         }
@@ -1117,14 +1198,9 @@
     $: emptyMessage = (() => {
         const q = debouncedQuery.trim();
         if (q && visibleResults.length === 0 && isAppsIconFlowView()) {
-            return appsView === "recent"
-                ? `No recent apps match '${query.trim()}'`
-                : `No apps match '${query.trim()}'`;
+            return `No apps match '${query.trim()}'`;
         }
         if (appsRegistryList.length === 0) return "No apps yet";
-        if (appsView === "recent" && visibleResults.length === 0) {
-            return "No recent apps to show";
-        }
         return "Nothing on home — try All apps";
     })();
 </script>
@@ -1150,6 +1226,24 @@
 {:else}
     {#if appsView === "library"}
         <div class="apps-library-toolbar">
+            <div
+                class="apps-library-sort"
+                role="group"
+                aria-label="Sort library"
+            >
+                <button
+                    type="button"
+                    class="apps-library-sort-btn"
+                    class:apps-library-sort-btn--active={librarySortMode ===
+                        "recent"}
+                    on:click={() => (librarySortMode = "recent")}>Recent</button>
+                <button
+                    type="button"
+                    class="apps-library-sort-btn"
+                    class:apps-library-sort-btn--active={librarySortMode ===
+                        "alpha"}
+                    on:click={() => (librarySortMode = "alpha")}>A–Z</button>
+            </div>
             <button
                 type="button"
                 class="apps-library-refresh"
@@ -1165,6 +1259,16 @@
             {/if}
         </div>
     {/if}
+    <OmniboxAppsCreateModal
+        open={createModalMode != null}
+        mode={createModalMode === "app" ? "app" : "folder"}
+        loadingSuggestions={createModalLoading}
+        folderSuggestions={createFolderSuggestions}
+        appSuggestions={createAppSuggestions}
+        errorText={createModalError}
+        on:close={closeCreateModal}
+        on:confirm={(e) => void handleCreateModalConfirm(e.detail)}
+    />
     <OmniboxAppsFolderModal
         open={folderModalRoot != null}
         rootFolder={folderModalRoot}
@@ -1178,7 +1282,7 @@
             openFolderDetail(id, "home");
         }}
     />
-    {#if visibleResults.length === 0}
+    {#if visibleResults.length === 0 && !showAppsAddTile}
         <div class="empty-state">{emptyMessage}</div>
     {:else}
         <div
@@ -1187,11 +1291,20 @@
             class:results-list--apps-arrange={isAppsIconFlowView()}
             role="listbox"
         >
+            {#if visibleResults.length === 0}
+                <div class="empty-state empty-state--with-flow">
+                    {emptyMessage}
+                </div>
+            {/if}
             <OmniboxSectionApps
                 {visibleResults}
                 {selectedResultIndex}
                 showDropToHomeRail={appsView === "folder" &&
                     appsFolderDropRailActive}
+                showAddTile={showAppsAddTile}
+                addTileAriaLabel={addTileAriaLabel}
+                onAddTileActivate={() =>
+                    void openCreateModal(appsView === "home" ? "folder" : "app")}
                 {faviconFailedByKey}
                 bind:appsIconFlowEl
                 onFaviconError={markResultFaviconFailed}
@@ -1218,6 +1331,11 @@
         text-align: center;
     }
 
+    .empty-state--with-flow {
+        padding: 12px 16px 8px;
+        flex-shrink: 0;
+    }
+
     .results-list {
         display: flex;
         flex-direction: column;
@@ -1236,6 +1354,38 @@
         align-items: center;
         gap: 10px 14px;
         padding: 4px 10px 10px;
+    }
+
+    .apps-library-sort {
+        display: inline-flex;
+        border-radius: 8px;
+        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.2));
+        overflow: hidden;
+    }
+
+    .apps-library-sort-btn {
+        padding: 8px 12px;
+        border: none;
+        background: transparent;
+        color: var(--st-text-muted, #aaa);
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+    }
+
+    .apps-library-sort-btn:hover {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
+        color: var(--st-text-primary, #eee);
+    }
+
+    .apps-library-sort-btn--active {
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.1));
+        color: var(--st-text-primary, #fff);
+    }
+
+    .apps-library-sort-btn + .apps-library-sort-btn {
+        border-left: 1px solid
+            var(--st-border-color, rgba(255, 255, 255, 0.15));
     }
 
     .apps-library-refresh {
