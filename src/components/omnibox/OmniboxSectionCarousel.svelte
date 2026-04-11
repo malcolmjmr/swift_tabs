@@ -10,6 +10,7 @@
     import OmniboxSectionHighlights from "./sections/OmniboxSectionHighlights.svelte";
     import OmniboxSectionHistory from "./sections/OmniboxSectionHistory.svelte";
     import OmniboxSectionReading from "./sections/OmniboxSectionReading.svelte";
+    import OmniboxSectionSchedule from "./sections/OmniboxSectionSchedule.svelte";
     import OmniboxSectionNewsPanel from "./sections/OmniboxSectionNewsPanel.svelte";
     import OmniboxSectionPlaceholder from "./sections/OmniboxSectionPlaceholder.svelte";
     import OmniboxSectionTabs from "./sections/OmniboxSectionTabs.svelte";
@@ -50,7 +51,6 @@
 
     $: {
         if (activeSectionId) {
-            console.log("activeSectionId", activeSectionId);
             visitedSectionIds = {
                 ...visitedSectionIds,
                 [activeSectionId]: true,
@@ -77,6 +77,14 @@
                             {sectionResultsOpen}
                             on:submit={() => dispatch("submit")}
                             on:close={() => dispatch("close")}
+                        />
+                    {:else if section.id === "schedule"}
+                        <OmniboxSectionSchedule
+                            bind:this={panelRefs[section.id]}
+                            dataEnabled={visitedSectionIds[section.id]}
+                            isActiveSlide={activeSectionId === section.id}
+                            {query}
+                            {debouncedQuery}
                         />
                     {:else if section.id === "tabs"}
                         <OmniboxSectionTabs
@@ -200,6 +208,7 @@
     :global(.omnibox-section-track) .omnibox-track-slide {
         flex: 0 0 100%;
         width: 100%;
+        padding: 0 20%;
         scroll-snap-align: start;
         min-height: 0;
         overflow-x: hidden;

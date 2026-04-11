@@ -1,8 +1,5 @@
 <script>
-    import {
-        bucketForObjective,
-        isObjectiveOverdue,
-    } from "../dueSemantics.js";
+    import { bucketForObjective, isObjectiveOverdue } from "../dueSemantics.js";
     import { formatScheduledCaption } from "../scheduleUtils.js";
 
     /** @type {import('../objectiveTypes.js').Objective} */
@@ -15,8 +12,7 @@
     export let column = "backlog";
 
     $: inColumn = o.timeframe === timeframe;
-    $: scheduled =
-        inColumn && bucketForObjective(o, timeframe) === "scheduled";
+    $: scheduled = inColumn && bucketForObjective(o, timeframe) === "scheduled";
     $: overdue = scheduled && isObjectiveOverdue(o);
     $: scheduleCaption =
         scheduled && column === "schedule"
@@ -34,6 +30,9 @@
             JSON.stringify({ id: o.id, sourceTimeframe: timeframe }),
         );
     }
+    function onRowClick() {
+        console.log("onRowClick", o);
+    }
 </script>
 
 <li
@@ -41,40 +40,51 @@
     class:obj-row-draggable={draggable}
     class:obj-row-busy={busy}
     {draggable}
+    on:mousedown={onRowClick}
     on:dragstart={onDragStart}
 >
     <div class="obj-line">
-        {#if scheduleCaption}
-            <span class="obj-when">{scheduleCaption}</span>
-        {/if}
-        <span
+        <div
             class="obj-title"
             class:obj-title-done={o.status === "completed"}
             class:obj-title-blocked={o.status === "blocked"}
             class:obj-title-overdue={overdue}
         >
             {o.title || "(Untitled)"}
-        </span>
-        {#if o.url && /^https?:\/\//i.test(o.url)}
-            <a
-                class="obj-link"
-                href={o.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open link"
-                on:click|stopPropagation
-            >
-                ↗
-            </a>
+        </div>
+        <div class="obj-subline">
+            {#if scheduleCaption}
+                <span class="obj-when">{scheduleCaption}</span>
+            {/if}
+            {#if o.url && /^https?:\/\//i.test(o.url)}
+                <a
+                    class="obj-link"
+                    href={o.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open link"
+                    on:click|stopPropagation
+                >
+                    ↗
+                </a>
+            {/if}
+        </div>
+        {#if o.description}
+            <div class="obj-description">{o.description}</div>
         {/if}
     </div>
 </li>
 
 <style>
     .obj-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
         list-style: none;
-        margin: 0;
-        padding: 6px 0;
+        margin: 6px 0px;
+        padding: 10px;
+        background-color: #333;
+        border-radius: 8px;
     }
 
     .obj-row-draggable {
@@ -92,9 +102,23 @@
 
     .obj-line {
         display: flex;
+        flex-direction: column;
         align-items: baseline;
+        gap: 3px;
+        flex-wrap: wrap;
+    }
+
+    .obj-subline {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
         gap: 10px;
         flex-wrap: wrap;
+    }
+
+    .obj-description {
+        font-size: 0.8125rem;
+        color: var(--p-muted, #8b949e);
     }
 
     .obj-when {
@@ -107,7 +131,6 @@
     }
 
     .obj-title {
-        flex: 1 1 12rem;
         min-width: 0;
         font-weight: 500;
         font-size: 0.9375rem;

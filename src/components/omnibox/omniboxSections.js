@@ -3,6 +3,7 @@
 /** @type {OmniboxSectionMeta[]} */
 export const SECTIONS = [
     { id: "apps", label: "Apps", icon: "apps" },
+    { id: "schedule", label: "Schedule", icon: "event" },
     //{ id: "tabs", label: "Tabs", icon: "tab" },
     //{ id: "tasks", label: "Tasks", icon: "task_alt" },
     { id: "history", label: "History", icon: "history" },

@@ -178,16 +178,15 @@
     {:else}
         <div class="newtab-inner">
             <div class="newtab-search">
-                <span class="material-symbols-rounded newtab-search__icon"
-                    >search</span
-                >
-                <input
+                <div
                     bind:this={inputEl}
                     type="text"
                     class="newtab-search__input"
-                    placeholder="Search or enter a URL…"
-                    aria-label="Search tabs, bookmarks, and history"
-                    bind:value={query}
+                    role="textbox"
+                    aria-multiline="true"
+                    aria-label="Enter search, URL, or command…"
+                    contenteditable="true"
+                    bind:textContent={query}
                     on:input={handleInput}
                     on:keydown={handleKeydown}
                 />
@@ -254,20 +253,23 @@
     }
     .newtab-page {
         min-height: 100vh;
-        margin: 0;
+        margin-top: 150px;
         box-sizing: border-box;
-        padding: 50px 50px 0px 50px;
         display: flex;
         flex-direction: column;
-
+        align-items: center;
+        justify-content: center;
         color: var(--st-text-primary, #f5f5f5);
     }
 
     .newtab-inner {
         flex-grow: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
-        gap: 20px;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
     }
 
     .newtab-search {
@@ -276,9 +278,15 @@
         gap: 14px;
         padding: 16px;
         border-radius: 12px;
+        max-width: 600px;
+        min-width: 600px;
         border: none;
         background: var(--st-newtab-search-bg, rgba(255, 255, 255, 0.06));
         box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+        border-color: var(
+            --st-newtab-search-border-focus,
+            rgba(120, 170, 255, 0.55)
+        );
         transition:
             border-color 0.15s ease,
             box-shadow 0.15s ease,
@@ -317,6 +325,8 @@
         line-height: 1.35;
         color: inherit;
         font-family: inherit;
+        max-height: 200px;
+        min-height: 50px;
     }
 
     .newtab-search__input::placeholder {
@@ -329,9 +339,14 @@
         gap: 8px;
         overflow-x: auto;
         overflow-y: hidden;
-        padding: 4px 0 2px;
-        scrollbar-width: thin;
+        height: 20px;
+        border-left: 1px solid #333;
+        border-right: 1px solid #333;
+
+        scrollbar-width: none;
         -webkit-overflow-scrolling: touch;
+        max-width: 600px;
+        margin: 15px 0px;
     }
 
     .newtab-section-row::-webkit-scrollbar {
@@ -390,11 +405,10 @@
         display: flex;
         flex-direction: column;
         border-radius: 16px;
-        max-height: calc(100vh - 190px);
     }
 
     .newtab-track :global(.omnibox-section-carousel) {
-        --omnibox-track-max-height: min(560px, calc(100vh - 280px));
+        --omnibox-track-max-height: min(560px, 100%);
     }
 
     .newtab-url-hint {
