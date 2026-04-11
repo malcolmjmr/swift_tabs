@@ -1,6 +1,7 @@
 import {
     appsAddAppToHomeEnd,
     appsDeleteApp,
+    appsDiscoverMissingFromHistory,
     appsGetState,
     appsMergeIntoFolder,
     appsMoveAppIntoFolder,
@@ -985,6 +986,14 @@ const chromeApiHandlers = {
 
     async APPS_GET_STATE() {
         return appsGetState();
+    },
+
+    async APPS_DISCOVER_FROM_HISTORY({ maxCandidates } = {}) {
+        const n =
+            typeof maxCandidates === "number" && maxCandidates > 0
+                ? Math.min(200, maxCandidates)
+                : undefined;
+        return appsDiscoverMissingFromHistory(n);
     },
 
     async APPS_PUT_LAYOUT({ layout }) {

@@ -250,6 +250,16 @@ export const chromeService = {
         return this.sendMessage("APPS_GET_STATE");
     },
 
+    /**
+     * Add app registry entries for frequented history domains not yet saved (library only; home unchanged).
+     * @param {number} [maxCandidates]
+     */
+    async appsDiscoverFromHistory(maxCandidates) {
+        return this.sendMessage("APPS_DISCOVER_FROM_HISTORY", {
+            maxCandidates,
+        });
+    },
+
     async appsPutLayout(layout) {
         return this.sendMessage("APPS_PUT_LAYOUT", { layout });
     },

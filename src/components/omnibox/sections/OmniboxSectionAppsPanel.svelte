@@ -27,7 +27,7 @@
     /** @type {object[]} */
     let appsRegistryList = [];
     let appsLayout = { version: 1, items: [] };
-    /** @type {'home' | 'folder' | 'detail' | 'folderDetail' | 'library'} */
+    /** @type {'home' | 'folder' | 'recent' | 'detail' | 'folderDetail' | 'library'} */
     let appsView = "home";
     /** @type {{ title: string, items: object[] }[]} */
     let appsFolderStack = [];
@@ -46,6 +46,10 @@
     let appsFolderDropRailActive = false;
     /** @type {object[]} */
     let recentHistoryPreview = [];
+
+    let libraryRefreshBusy = false;
+    /** @type {string} */
+    let libraryRefreshHint = "";
 
     /** @type {object[]} */
     let visibleResults = [];
@@ -104,6 +108,26 @@
         }
     }
 
+    async function refreshAppsFromHistory() {
+        if (libraryRefreshBusy) return;
+        libraryRefreshBusy = true;
+        libraryRefreshHint = "";
+        try {
+            const r = await chromeService.appsDiscoverFromHistory(80);
+            const added = typeof r?.added === "number" ? r.added : 0;
+            libraryRefreshHint =
+                added > 0
+                    ? `Added ${added} site${added === 1 ? "" : "s"} from history`
+                    : "No new frequented sites found (needs 3+ days of visits in the last 90 days)";
+            await loadAppsState();
+        } catch (e) {
+            console.warn("Omnibox: apps discover from history", e);
+            libraryRefreshHint = "Could not scan history";
+        } finally {
+            libraryRefreshBusy = false;
+        }
+    }
+
     async function loadAppsState() {
         try {
             const r = await chromeService.appsGetState();
@@ -135,7 +159,18 @@
         return (
             appsView === "home" ||
             appsView === "folder" ||
+            appsView === "recent" ||
             appsView === "library"
+        );
+    }
+
+    /** @param {string} q */
+    function recentFolderVisibleForQuery(q) {
+        if (recentHistoryPreview.length === 0) return false;
+        if (!q) return true;
+        return recentHistoryPreview.some(
+            (app) =>
+                matchesAppQuery(app, q) && !appHiddenFromHomeStrip(app),
         );
     }
 
@@ -243,11 +278,16 @@
             appsSuppressNextClick = true;
             selectedResultIndex = i;
             if (item.type === "stApp") {
-                openAppsDetail(item.app.id);
+                openAppsDetail(
+                    item.app.id,
+                    appsView === "recent" ? "recent" : undefined,
+                );
             } else if (item.type === "stLibApp") {
                 openAppsDetail(item.app.id, "library");
-            } else             if (item.type === "stFolder") {
+            } else if (item.type === "stFolder") {
                 openFolderDetail(item.folder.id);
+            } else if (item.type === "stRecent") {
+                openRecentAppsBrowse();
             } else if (item.type === "stAllApps") {
                 openAppsLibrary();
             }
@@ -292,6 +332,17 @@
 
     function buildAppsHomeRows(q) {
         const rows = [];
+        if (recentFolderVisibleForQuery(q)) {
+            const n = recentHistoryPreview.filter(
+                (a) => !appHiddenFromHomeStrip(a),
+            ).length;
+            rows.push({
+                type: "stRecent",
+                title: "Recent",
+                subtitle: `${n} from history`,
+                folderPreviewApps: recentHistoryPreview.slice(0, 9),
+            });
+        }
         for (const it of appsLayout.items || []) {
             if (it.kind === "app") {
                 const app = appsRegistryById[it.appId];
@@ -327,6 +378,21 @@
             subtitle: "Browse full library",
             folderPreviewApps: recentHistoryPreview.slice(0, 9),
         });
+        return rows;
+    }
+
+    function buildAppsRecentRows(q) {
+        const rows = [];
+        for (const app of recentHistoryPreview) {
+            if (!matchesAppQuery(app, q)) continue;
+            if (appHiddenFromHomeStrip(app)) continue;
+            rows.push({
+                type: "stApp",
+                app,
+                title: app.displayTitle || app.title || app.domain,
+                subtitle: app.domain,
+            });
+        }
         return rows;
     }
 
@@ -419,6 +485,14 @@
             );
             return;
         }
+        if (appsView === "recent") {
+            visibleResults = buildAppsRecentRows(q);
+            selectedResultIndex = Math.min(
+                selectedResultIndex,
+                Math.max(0, visibleResults.length - 1),
+            );
+            return;
+        }
         if (appsView === "folder") {
             visibleResults = buildAppsFolderRows(q);
             selectedResultIndex = Math.min(
@@ -473,32 +547,39 @@
         selectedResultIndex = 0;
     }
 
+    function openRecentAppsBrowse() {
+        appsView = "recent";
+        applyAppsVisibleResults();
+        selectedResultIndex = 0;
+    }
+
+    /** @param {'home'|'folder'|'library'|'recent'|undefined} [fromCtx] */
+    function appsDetailOpenedFrom(fromCtx) {
+        if (fromCtx) return fromCtx;
+        if (appsView === "library") return "library";
+        if (appsView === "recent") return "recent";
+        if (appsView === "folder") return "folder";
+        return "home";
+    }
+
     function openAppsDetail(appId, from) {
         detailFolderId = null;
         detailAppId = appId;
-        detailOpenedFrom =
-            from ||
-            (appsView === "library"
-                ? "library"
-                : appsView === "folder"
-                  ? "folder"
-                  : "home");
+        detailOpenedFrom = appsDetailOpenedFrom(
+            /** @type {'home'|'folder'|'library'|'recent'|undefined} */ (from),
+        );
         appsView = "detail";
         visibleResults = [];
         selectedResultIndex = 0;
     }
 
-    /** @param {string} folderId @param {'home'|'folder'|'library'|undefined} [from] */
+    /** @param {string} folderId @param {'home'|'folder'|'library'|'recent'|undefined} [from] */
     function openFolderDetail(folderId, from) {
         detailAppId = null;
         detailFolderId = folderId;
-        detailOpenedFrom =
-            from ||
-            (appsView === "library"
-                ? "library"
-                : appsView === "folder"
-                  ? "folder"
-                  : "home");
+        detailOpenedFrom = appsDetailOpenedFrom(
+            /** @type {'home'|'folder'|'library'|'recent'|undefined} */ (from),
+        );
         appsView = "folderDetail";
         visibleResults = [];
         selectedResultIndex = 0;
@@ -583,6 +664,10 @@
             openFolderForBrowse(item.folder);
             return;
         }
+        if (item.type === "stRecent") {
+            openRecentAppsBrowse();
+            return;
+        }
         if (item.type === "stAllApps") {
             openAppsLibrary();
         }
@@ -594,12 +679,20 @@
         if (item.type === "stApp" || item.type === "stLibApp") {
             openAppsDetail(
                 item.app.id,
-                appsView === "library" ? "library" : undefined,
+                appsView === "library"
+                    ? "library"
+                    : appsView === "recent"
+                      ? "recent"
+                      : undefined,
             );
             return;
         }
         if (item.type === "stFolder") {
             openFolderForBrowse(item.folder);
+            return;
+        }
+        if (item.type === "stRecent") {
+            openRecentAppsBrowse();
             return;
         }
         if (item.type === "stAllApps") {
@@ -615,6 +708,7 @@
             return;
         }
         if (item.type === "stFolder") openFolderForBrowse(item.folder);
+        else if (item.type === "stRecent") openRecentAppsBrowse();
         else if (item.type === "stAllApps") openAppsLibrary();
     }
 
@@ -622,11 +716,16 @@
         if (item.type === "stApp" || item.type === "stLibApp") {
             openAppsDetail(
                 item.app.id,
-                item.type === "stLibApp" ? "library" : undefined,
+                item.type === "stLibApp"
+                    ? "library"
+                    : appsView === "recent"
+                      ? "recent"
+                      : undefined,
             );
             return;
         }
         if (item.type === "stFolder") openFolderForBrowse(item.folder);
+        else if (item.type === "stRecent") openRecentAppsBrowse();
         else if (item.type === "stAllApps") openAppsLibrary();
     }
 
@@ -649,6 +748,7 @@
         if (!isSwiftAppsRow(item)) return;
         if (
             item.type === "stAllApps" ||
+            item.type === "stRecent" ||
             item.type === "stLibApp" ||
             appsView === "library"
         )
@@ -708,7 +808,11 @@
         const fromItem = visibleResults[from];
         const toItem = visibleResults[i];
 
-        if (fromItem?.type === "stApp" && toItem?.type === "stFolder") {
+        if (
+            fromItem?.type === "stApp" &&
+            toItem?.type === "stFolder" &&
+            appsView !== "recent"
+        ) {
             await chromeService.appsMoveAppIntoFolder(
                 fromItem.app.id,
                 toItem.folder.id,
@@ -777,7 +881,12 @@
         if (from == null) return;
         const item = visibleResults[from];
         if (!item || !isSwiftAppsRow(item)) return;
-        if (item.type === "stAllApps" || item.type === "stLibApp") return;
+        if (
+            item.type === "stAllApps" ||
+            item.type === "stRecent" ||
+            item.type === "stLibApp"
+        )
+            return;
         if (appsView !== "home") return;
         if (item.type === "stApp") {
             await chromeService.appsRemoveFromHome(item.app.id);
@@ -790,7 +899,8 @@
 
     function homeRowIndexToLayoutIndex(rowIndex) {
         const item = visibleResults[rowIndex];
-        if (!item || item.type === "stAllApps") return -1;
+        if (!item || item.type === "stAllApps" || item.type === "stRecent")
+            return -1;
         const list =
             appsView === "home"
                 ? appsLayout.items || []
@@ -879,6 +989,12 @@
             return true;
         }
         if (appsView === "library") {
+            appsView = "home";
+            libraryRefreshHint = "";
+            applyAppsVisibleResults();
+            return true;
+        }
+        if (appsView === "recent") {
             appsView = "home";
             applyAppsVisibleResults();
             return true;
@@ -998,14 +1114,19 @@
         return false;
     }
 
-    $: emptyMessage =
-        debouncedQuery.trim() &&
-        visibleResults.length === 0 &&
-        isAppsIconFlowView()
-            ? `No apps match '${query.trim()}'`
-            : appsRegistryList.length === 0
-              ? "No apps yet"
-              : "Nothing on home — try All apps";
+    $: emptyMessage = (() => {
+        const q = debouncedQuery.trim();
+        if (q && visibleResults.length === 0 && isAppsIconFlowView()) {
+            return appsView === "recent"
+                ? `No recent apps match '${query.trim()}'`
+                : `No apps match '${query.trim()}'`;
+        }
+        if (appsRegistryList.length === 0) return "No apps yet";
+        if (appsView === "recent" && visibleResults.length === 0) {
+            return "No recent apps to show";
+        }
+        return "Nothing on home — try All apps";
+    })();
 </script>
 
 {#if appsView === "detail"}
@@ -1027,6 +1148,23 @@
         {persistFolderFields}
     />
 {:else}
+    {#if appsView === "library"}
+        <div class="apps-library-toolbar">
+            <button
+                type="button"
+                class="apps-library-refresh"
+                disabled={libraryRefreshBusy}
+                on:click={() => void refreshAppsFromHistory()}
+            >
+                {libraryRefreshBusy
+                    ? "Scanning history…"
+                    : "Add sites from history"}
+            </button>
+            {#if libraryRefreshHint}
+                <span class="apps-library-hint">{libraryRefreshHint}</span>
+            {/if}
+        </div>
+    {/if}
     <OmniboxAppsFolderModal
         open={folderModalRoot != null}
         rootFolder={folderModalRoot}
@@ -1090,5 +1228,37 @@
 
     .results-list--apps-arrange :global(.apps-icon-tile--draggable) {
         cursor: grab;
+    }
+
+    .apps-library-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px 14px;
+        padding: 4px 10px 10px;
+    }
+
+    .apps-library-refresh {
+        padding: 8px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.2));
+        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
+        color: var(--st-text-primary, #eee);
+        font-size: 13px;
+        cursor: pointer;
+    }
+
+    .apps-library-refresh:hover:not(:disabled) {
+        background: var(--st-bg-hover, rgba(255, 255, 255, 0.1));
+    }
+
+    .apps-library-refresh:disabled {
+        opacity: 0.65;
+        cursor: default;
+    }
+
+    .apps-library-hint {
+        font-size: 12px;
+        color: var(--st-text-muted, #888);
     }
 </style>

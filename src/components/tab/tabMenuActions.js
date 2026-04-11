@@ -1,5 +1,21 @@
+import { sortedOpenWindows, targetTabsForNavBatch } from "../../app/navWindowModel.js";
 import { chromeService } from "../../services/chromeApi";
 import { recentActionsStore } from "../../stores/recentActionsStore";
+
+/**
+ * @param {chrome.tabs.Tab | null} tab
+ * @param {chrome.windows.Window[]} windowsList
+ * @param {readonly number[]} multiSelectedIds
+ * @returns {chrome.tabs.Tab[]}
+ */
+function menuTargetTabs(tab, windowsList, multiSelectedIds) {
+    if (!tab?.id) return [];
+    const wl = sortedOpenWindows(windowsList);
+    const win = wl.find((w) => w.id === tab.windowId);
+    if (!win?.tabs?.length) return [tab];
+    const tabsSorted = [...win.tabs].sort((a, b) => a.index - b.index);
+    return targetTabsForNavBatch(tabsSorted, tab, multiSelectedIds);
+}
 
 const QUICK_ACTIONS = [
     { id: "pin", icon: "push_pin", label: "Pin" },
@@ -67,27 +83,51 @@ export const TAB_MENU_SECTIONS = [
  * @param {string} sectionId
  * @param {string} actionId
  * @param {() => void} onClose
+ * @param {{
+ *   multiSelectedIds?: readonly number[];
+ *   windowsList?: chrome.windows.Window[];
+ *   onRemoveClosedFromSelection?: (tabIds: number[]) => void;
+ * }} [opts]
  */
-export async function runTabMenuAction(tab, sectionId, actionId, onClose) {
+export async function runTabMenuAction(tab, sectionId, actionId, onClose, opts = {}) {
     if (!tab?.id) return;
+    const multiSelectedIds = opts.multiSelectedIds ?? [];
+    const windowsList = opts.windowsList ?? [];
+    const targets = menuTargetTabs(tab, windowsList, multiSelectedIds);
+    if (targets.length === 0) return;
     try {
         switch (actionId) {
             case "pin":
-                await chromeService.pinTab(tab.id);
+                for (const t of targets) {
+                    if (t.id != null) await chromeService.pinTab(t.id);
+                }
                 break;
             case "reload":
-                await chromeService.reloadTab(tab.id);
+                for (const t of targets) {
+                    if (t.id != null) await chromeService.reloadTab(t.id);
+                }
                 break;
             case "duplicate":
-                await chromeService.duplicateTab(tab.id);
+                for (const t of [...targets].sort((a, b) => b.index - a.index)) {
+                    if (t.id != null) await chromeService.duplicateTab(t.id);
+                }
                 break;
             case "copy": {
-                const url = await chromeService.copyTabUrl(tab.id);
-                if (url) await navigator.clipboard.writeText(url);
+                const urls = [];
+                for (const t of targets) {
+                    if (t.id == null) continue;
+                    const url = await chromeService.copyTabUrl(t.id);
+                    if (url) urls.push(url);
+                }
+                if (urls.length > 0) {
+                    await navigator.clipboard.writeText(urls.join("\n"));
+                }
                 break;
             }
             case "sleep":
-                await chromeService.discardTab(tab.id);
+                for (const t of targets) {
+                    if (t.id != null) await chromeService.discardTab(t.id);
+                }
                 break;
             case "find":
                 await chromeService.activateTab(tab.id);
@@ -100,9 +140,16 @@ export async function runTabMenuAction(tab, sectionId, actionId, onClose) {
             case "move_window":
                 await chromeService.createWindowWithTab(tab.id);
                 break;
-            case "close":
-                await chromeService.closeTab(tab.id);
+            case "close": {
+                const closedIds = [];
+                for (const t of [...targets].sort((a, b) => b.index - a.index)) {
+                    if (t.id == null) continue;
+                    await chromeService.closeTab(t.id);
+                    closedIds.push(t.id);
+                }
+                opts.onRemoveClosedFromSelection?.(closedIds);
                 break;
+            }
             case "close_others":
                 await chromeService.closeOtherTabs(tab.id);
                 break;

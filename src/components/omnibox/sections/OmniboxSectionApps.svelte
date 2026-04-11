@@ -41,6 +41,7 @@
         if (item.type === "stFolder") {
             return item.folder?.title || "";
         }
+        if (item.type === "stRecent") return "Recent";
         if (item.type === "stAllApps") return "All apps";
         const app = item.app;
         if (!app) return "";
@@ -64,17 +65,19 @@
         </div>
     {/if}
     <div class="apps-icon-flow" bind:this={appsIconFlowEl}>
-        {#each visibleResults as item, i}
+        {#each visibleResults as item, i (item)}
             {@const faviconUrl = getResultFaviconSrc(item, faviconFailedByKey)}
             {@const swift = isSwiftAppsRow(item)}
             {@const tileUid =
                 item.type === "stFolder"
                     ? `omnibox-apps-f-${item.folder?.id ?? i}`
-                    : item.type === "stAllApps"
-                      ? "omnibox-apps-all"
-                      : `omnibox-apps-a-${item.app?.id ?? i}`}
+                    : item.type === "stRecent"
+                      ? "omnibox-apps-recent"
+                      : item.type === "stAllApps"
+                        ? "omnibox-apps-all"
+                        : `omnibox-apps-a-${item.app?.id ?? i}`}
             {@const tileTitle = appsIconShortLabel(item)}
-            {#if item.type === "stFolder" || item.type === "stAllApps"}
+            {#if item.type === "stFolder" || item.type === "stRecent" || item.type === "stAllApps"}
                 <OmniboxAppsIconTileFolder
                     {i}
                     {item}

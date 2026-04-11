@@ -186,9 +186,12 @@ export async function appsRemoveFromHome(appId) {
 }
 
 /**
+ * Domains with activity on 3+ distinct calendar days in the last 90 days, ranked by visit-day count then recency.
+ *
+ * @param {number} [maxResults]
  * @returns {Promise<{ domain: string, url: string, title: string, visitCount: number, lastVisitTime: number }[]>}
  */
-async function computeFavoriteDomainsFromHistory() {
+async function computeFavoriteDomainsFromHistory(maxResults = 20) {
     const threeMonthsAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
     const history = await chrome.history.search({
         text: "",
@@ -236,7 +239,7 @@ async function computeFavoriteDomainsFromHistory() {
                 b.visitCount - a.visitCount ||
                 b.lastVisitTime - a.lastVisitTime,
         )
-        .slice(0, 20);
+        .slice(0, maxResults);
 }
 
 function extractDomain(url) {
@@ -292,6 +295,56 @@ export async function appsSeedFromFavoritesIfEmpty() {
     await appsPutLayout({ version: 1, items });
     await chrome.storage.local.set({ [APPS_SEED_FLAG_KEY]: true });
     return { seeded: true, count: records.length };
+}
+
+/**
+ * Add registry apps for favorite history domains that are not already saved (does not change home layout).
+ *
+ * @param {number} [maxCandidates] — scan up to this many top favorite domains (default 80)
+ * @returns {Promise<{ added: number, domains: string[] }>}
+ */
+export async function appsDiscoverMissingFromHistory(maxCandidates = 80) {
+    if (!chrome.history?.search) {
+        return { added: 0, domains: [] };
+    }
+
+    const favorites = await computeFavoriteDomainsFromHistory(maxCandidates);
+    const existing = await appsListAll();
+    /** @type {Set<string>} */
+    const have = new Set();
+    for (const a of existing) {
+        const d = normalizeDomain(a.domain);
+        if (d) have.add(d);
+    }
+
+    const storage = getDomainStorage();
+    /** @type {import('./appsModel.js').AppRecord[]} */
+    const toAdd = [];
+
+    for (const fav of favorites) {
+        const domain = normalizeDomain(fav.domain);
+        if (!domain || have.has(domain)) continue;
+        have.add(domain);
+        const id = appIdFromDomain(domain);
+        toAdd.push({
+            id,
+            domain,
+            defaultUrl: defaultUrlForDomain(domain),
+            title: fav.title || domain,
+            savedLinks: [],
+        });
+    }
+
+    if (toAdd.length > 0) {
+        await storage.putMany(COLLECTION, toAdd);
+        await appsRecomputeAccessBlockList();
+        void syncAppRoutineAlarms();
+    }
+
+    return {
+        added: toAdd.length,
+        domains: toAdd.map((r) => r.domain),
+    };
 }
 
 /**

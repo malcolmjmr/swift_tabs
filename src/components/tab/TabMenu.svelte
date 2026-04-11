@@ -17,6 +17,12 @@
     export let tab = null;
     export let onClose = () => {};
     export let docked = true;
+    /** @type {readonly number[]} */
+    export let multiSelectedIds = [];
+    /** @type {chrome.windows.Window[]} */
+    export let windowsList = [];
+    /** @param {number[]} tabIds */
+    export let onRemoveClosedFromSelection = () => {};
     /** Same threshold as navigation-mode tab list (settings.scrollVerticalThreshold). */
     export let scrollVerticalThreshold = 33;
 
@@ -244,8 +250,22 @@
         scrollSelectedIntoView();
     }
 
+    function menuActionOpts() {
+        return {
+            multiSelectedIds,
+            windowsList,
+            onRemoveClosedFromSelection,
+        };
+    }
+
     function executeAction(sectionId, actionId) {
-        void runTabMenuAction(tab, sectionId, actionId, onClose);
+        void runTabMenuAction(tab, sectionId, actionId, onClose, menuActionOpts());
+    }
+
+    function copyUrlsShortcut() {
+        if (!tab?.id) return;
+        if (window.getSelection().toString().length > 0) return;
+        void runTabMenuAction(tab, "quick", "copy", onClose, menuActionOpts());
     }
 
     function activateCell(cell) {
@@ -298,12 +318,25 @@
             return;
         }
         if (
+            (event.key === "c" || event.key === "C") &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            !event.metaKey &&
+            !event.shiftKey
+        ) {
+            event.preventDefault();
+            event.stopPropagation();
+            copyUrlsShortcut();
+            return;
+        }
+        if (
             event.key.length === 1 &&
             !event.ctrlKey &&
             !event.altKey &&
             !event.metaKey &&
             !event.shiftKey
         ) {
+            if (window.getSelection().toString().length > 0) return;
             const active = document.activeElement;
             if (
                 active?.tagName === "INPUT" ||

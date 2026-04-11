@@ -282,6 +282,14 @@
         persistentTabSelection = new Set();
     }
 
+    /** @param {number[]} tabIds */
+    function removeTabIdsFromPersistentSelection(tabIds) {
+        if (!tabIds?.length) return;
+        const next = new Set(persistentTabSelection);
+        for (const id of tabIds) next.delete(id);
+        persistentTabSelection = next;
+    }
+
     function togglePersistentTabSelection(tabId) {
         if (tabId == null) return;
         const next = new Set(persistentTabSelection);
@@ -1284,6 +1292,7 @@
 
 <AppOverlays
     {onNavActivateTab}
+    onRemoveClosedFromSelection={removeTabIdsFromPersistentSelection}
     bind:tabMenuIsOpen
     bind:helpMenuIsOpen
     bind:settingsPageIsOpen

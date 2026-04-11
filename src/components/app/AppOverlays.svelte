@@ -14,6 +14,8 @@
     import { tabStore } from "../../stores/tabStore.js";
     /** @type {(tab: chrome.tabs.Tab) => void | Promise<void>} */
     export let onNavActivateTab = async () => {};
+    /** @param {number[]} tabIds */
+    export let onRemoveClosedFromSelection = () => {};
 
     export let tabMenuIsOpen;
     export let helpMenuIsOpen;
@@ -83,6 +85,9 @@
         tab={tabMenuTab}
         docked={false}
         scrollVerticalThreshold={settings?.scrollVerticalThreshold ?? 33}
+        {multiSelectedIds}
+        windowsList={windowsList}
+        onRemoveClosedFromSelection={onRemoveClosedFromSelection}
         onClose={() => {
             tabMenuIsOpen = false;
         }}
@@ -172,6 +177,9 @@
                     docked={true}
                     scrollVerticalThreshold={settings?.scrollVerticalThreshold ??
                         33}
+                    {multiSelectedIds}
+                    windowsList={windowsList}
+                    onRemoveClosedFromSelection={onRemoveClosedFromSelection}
                     onClose={() => {
                         tabMenuIsOpen = false;
                     }}

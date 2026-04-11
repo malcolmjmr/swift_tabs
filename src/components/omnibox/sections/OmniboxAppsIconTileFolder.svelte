@@ -33,7 +33,8 @@
     /** @param {object} it */
     export let onFaviconError = () => {};
 
-    $: draggable = swift && item.type !== "stAllApps";
+    $: draggable =
+        swift && item.type !== "stAllApps" && item.type !== "stRecent";
 
     /** @param {object} app */
     function stubRow(app) {

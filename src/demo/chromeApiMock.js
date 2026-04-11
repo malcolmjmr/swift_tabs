@@ -469,6 +469,10 @@ export const chromeService = {
         return { apps: [], layout: emptyLayout(), recentHistoryPreview: [] };
     },
 
+    async appsDiscoverFromHistory() {
+        return { added: 0, domains: [] };
+    },
+
     async appsPutLayout() {
         return { ok: true };
     },
