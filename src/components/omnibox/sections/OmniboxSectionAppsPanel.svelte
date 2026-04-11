@@ -11,7 +11,9 @@
     import {
         collectFolderTitlesFromLayout,
         suggestAppEntries,
+        suggestAppEntriesFromGoal,
         suggestFolderNames,
+        suggestFolderNamesFromGoal,
     } from "./omniboxAppsSuggestions.js";
     import OmniboxAppsCreateModal from "./OmniboxAppsCreateModal.svelte";
     import OmniboxAppsFolderModal from "./OmniboxAppsFolderModal.svelte";
@@ -63,9 +65,9 @@
     /** @type {'folder' | 'app' | null} */
     let createModalMode = null;
     let createModalLoading = false;
-    /** @type {string[]} */
+    /** @type {{ name: string, description?: string }[]} */
     let createFolderSuggestions = [];
-    /** @type {{ label: string, domain: string }[]} */
+    /** @type {{ label: string, domain: string, description?: string }[]} */
     let createAppSuggestions = [];
     let createModalError = "";
 
@@ -598,6 +600,65 @@
             }
         } catch (e) {
             console.warn("Omnibox: create suggestions", e);
+        } finally {
+            createModalLoading = false;
+        }
+    }
+
+    /** @param {{ mode: 'folder' | 'app', goal: string }} detail */
+    async function handleCreateModalGoalSuggest(detail) {
+        const { mode, goal } = detail;
+        const g = (goal || "").trim();
+        if (!g) return;
+        createModalError = "";
+        createModalLoading = true;
+        if (mode === "folder") {
+            createFolderSuggestions = [];
+        } else {
+            createAppSuggestions = [];
+        }
+        try {
+            if (mode === "folder") {
+                createFolderSuggestions = await suggestFolderNamesFromGoal(
+                    g,
+                    collectFolderTitlesFromLayout(appsLayout),
+                );
+            } else if (appsView === "folder") {
+                const top = appsFolderStack[appsFolderStack.length - 1];
+                /** @type {{ domain: string, title: string }[]} */
+                const appsInFolder = [];
+                for (const ch of top?.items || []) {
+                    if (ch.kind === "app") {
+                        const a = appsRegistryById[ch.appId];
+                        if (a) {
+                            appsInFolder.push({
+                                domain: a.domain || "",
+                                title:
+                                    a.displayTitle ||
+                                    a.title ||
+                                    a.domain ||
+                                    "",
+                            });
+                        }
+                    }
+                }
+                createAppSuggestions = await suggestAppEntriesFromGoal({
+                    goal: g,
+                    allRegistryApps: appsRegistryList,
+                    folderContext: {
+                        title: (top?.title || "").trim() || "Folder",
+                        appsInFolder,
+                    },
+                });
+            } else {
+                createAppSuggestions = await suggestAppEntriesFromGoal({
+                    goal: g,
+                    allRegistryApps: appsRegistryList,
+                    folderContext: null,
+                });
+            }
+        } catch (e) {
+            console.warn("Omnibox: goal suggestions", e);
         } finally {
             createModalLoading = false;
         }
@@ -1268,6 +1329,7 @@
         errorText={createModalError}
         on:close={closeCreateModal}
         on:confirm={(e) => void handleCreateModalConfirm(e.detail)}
+        on:goalSuggest={(e) => void handleCreateModalGoalSuggest(e.detail)}
     />
     <OmniboxAppsFolderModal
         open={folderModalRoot != null}

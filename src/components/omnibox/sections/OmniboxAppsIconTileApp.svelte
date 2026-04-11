@@ -134,7 +134,7 @@
         right: 12px;
         min-width: 18px;
         height: 18px;
-        padding: 0 5px;
+        padding: 0px;
         display: flex;
         align-items: center;
         justify-content: center;

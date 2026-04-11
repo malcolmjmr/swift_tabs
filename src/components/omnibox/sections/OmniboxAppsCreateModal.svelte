@@ -1,13 +1,14 @@
 <script>
     import { createEventDispatcher } from "svelte";
+    import { countInputWords } from "./omniboxAppsSuggestions.js";
 
     /** @type {'folder' | 'app'} */
     export let mode = "folder";
     export let open = false;
     export let loadingSuggestions = false;
-    /** @type {string[]} */
+    /** @type {(string | { name: string, description?: string })[]} */
     export let folderSuggestions = [];
-    /** @type {{ label: string, domain: string }[]} */
+    /** @type {{ label: string, domain: string, description?: string }[]} */
     export let appSuggestions = [];
     export let errorText = "";
 
@@ -21,14 +22,18 @@
     }
     $: prevOpen = open;
 
-    $: dialogTitle =
-        mode === "folder" ? "New folder" : "Add app";
-    $: inputLabel =
-        mode === "folder" ? "Folder name" : "Domain or URL";
-    $: inputPlaceholder =
+    const inputPlaceholder =
+        mode === "folder" ? "Enter folder name" : "Enter app or website name";
+
+    $: wordCount = countInputWords(textInput);
+    $: primaryActionLabel =
         mode === "folder"
-            ? "e.g. Work projects"
-            : "e.g. github.com or https://…";
+            ? wordCount <= 2
+                ? "Create folder"
+                : "Suggest folders"
+            : wordCount <= 2
+              ? "Add app"
+              : "Suggest apps";
 
     function onBackdropPointerDown(e) {
         if (e.target === e.currentTarget) dispatch("close");
@@ -45,23 +50,36 @@
 
     function submit() {
         const raw = textInput.trim();
+        if (!raw) return;
+        const n = countInputWords(raw);
         if (mode === "folder") {
-            if (!raw) return;
-            dispatch("confirm", { kind: "folder", name: raw });
+            if (n <= 2) {
+                dispatch("confirm", { kind: "folder", name: raw });
+            } else {
+                dispatch("goalSuggest", { mode: "folder", goal: raw });
+            }
             return;
         }
-        if (!raw) return;
-        dispatch("confirm", { kind: "app", domain: raw, title: raw });
+        if (n <= 2) {
+            dispatch("confirm", { kind: "app", domain: raw, title: raw });
+        } else {
+            dispatch("goalSuggest", { mode: "app", goal: raw });
+        }
     }
 
-    /** @param {unknown} name */
-    function pickFolder(name) {
-        const t = String(name ?? "").trim();
+    /** @param {unknown} entry */
+    function pickFolder(entry) {
+        const t =
+            typeof entry === "string"
+                ? entry.trim()
+                : String(
+                      /** @type {{ name?: string }} */ (entry)?.name ?? "",
+                  ).trim();
         if (!t) return;
         dispatch("confirm", { kind: "folder", name: t });
     }
 
-    /** @param {{ label: string, domain: string }} row */
+    /** @param {{ label: string, domain: string, description?: string }} row */
     function pickApp(row) {
         dispatch("confirm", {
             kind: "app",
@@ -86,77 +104,62 @@
             on:pointerdown|stopPropagation
             on:keydown={onDialogKeydown}
         >
-            <header class="create-modal-header">
-                <h2 id="create-modal-title" class="create-modal-title">
-                    {dialogTitle}
-                </h2>
-                <button
-                    type="button"
-                    class="create-modal-icon-btn"
-                    aria-label="Close"
-                    on:click={() => dispatch("close")}
-                >
-                    <span class="material-symbols-rounded">close</span>
-                </button>
-            </header>
             <div class="create-modal-body">
-                {#if loadingSuggestions}
-                    <p class="create-modal-hint">Loading suggestions…</p>
-                {:else if mode === "folder" && folderSuggestions.length > 0}
-                    <p class="create-modal-section-label">Suggested folders</p>
-                    <div class="create-modal-chips">
-                        {#each folderSuggestions as s, i (`f-${i}-${s}`)}
-                            <button
-                                type="button"
-                                class="create-modal-chip"
-                                on:click|stopPropagation={() =>
-                                    pickFolder(s)}>{s}</button>
-                        {/each}
-                    </div>
-                {:else if mode === "app" && appSuggestions.length > 0}
-                    <p class="create-modal-section-label">Suggested apps</p>
-                    <div class="create-modal-chips create-modal-chips--apps">
-                        {#each appSuggestions as row, ri (`a-${ri}-${row.domain}`)}
-                            <button
-                                type="button"
-                                class="create-modal-chip"
-                                on:click|stopPropagation={() => pickApp(row)}
-                            >
-                                {row.label}<span class="create-modal-chip-domain"
-                                    >{row.domain}</span>
-                            </button>
-                        {/each}
-                    </div>
-                {/if}
-
                 <label class="create-modal-field">
-                    <span class="create-modal-field-label">{inputLabel}</span>
                     <input
                         class="create-modal-input"
                         type="text"
                         placeholder={inputPlaceholder}
                         bind:value={textInput}
                         on:keydown={(e) =>
-                            e.key === "Enter" &&
-                            (e.preventDefault(), submit())}
+                            e.key === "Enter" && (e.preventDefault(), submit())}
                     />
                 </label>
+
+                {#if loadingSuggestions}
+                    <p class="create-modal-hint">Loading suggestions…</p>
+                {:else if mode === "folder" && folderSuggestions.length > 0}
+                    <div class="create-modal-chips create-modal-chips--stacked">
+                        {#each folderSuggestions as s, i (`f-${i}-${typeof s === "string" ? s : s.name}`)}
+                            <button
+                                type="button"
+                                class="create-modal-chip"
+                                on:click|stopPropagation={() => pickFolder(s)}
+                            >
+                                {typeof s === "string"
+                                    ? s
+                                    : s.name}{#if typeof s !== "string" && s.description}
+                                    <span class="create-modal-chip-desc"
+                                        >{s.description}</span
+                                    >{/if}
+                            </button>
+                        {/each}
+                    </div>
+                {:else if mode === "app" && appSuggestions.length > 0}
+                    <div class="create-modal-chips create-modal-chips--stacked">
+                        {#each appSuggestions as row, ri (`a-${ri}-${row.domain}`)}
+                            <button
+                                type="button"
+                                class="create-modal-chip"
+                                on:click|stopPropagation={() => pickApp(row)}
+                            >
+                                {row.label}
+                                {#if row.description}
+                                    <span class="create-modal-chip-desc"
+                                        >{row.description}</span
+                                    >
+                                {/if}
+                                <span class="create-modal-chip-domain"
+                                    >{row.domain}</span
+                                >
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
 
                 {#if errorText}
                     <p class="create-modal-error" role="alert">{errorText}</p>
                 {/if}
-
-                <div class="create-modal-actions">
-                    <button
-                        type="button"
-                        class="create-modal-btn create-modal-btn--ghost"
-                        on:click={() => dispatch("close")}>Cancel</button>
-                    <button
-                        type="button"
-                        class="create-modal-btn create-modal-btn--primary"
-                        disabled={!textInput.trim()}
-                        on:click={submit}>Create</button>
-                </div>
             </div>
         </div>
     </div>
@@ -243,15 +246,6 @@
         color: var(--st-text-muted, #888);
     }
 
-    .create-modal-section-label {
-        margin: 0 0 8px;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--st-text-muted, #aaa);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
     .create-modal-chips {
         display: flex;
         flex-wrap: wrap;
@@ -259,10 +253,18 @@
         margin-bottom: 16px;
     }
 
-    .create-modal-chips--apps .create-modal-chip {
+    .create-modal-chips--stacked .create-modal-chip {
         flex-direction: column;
         align-items: flex-start;
-        gap: 2px;
+        gap: 4px;
+    }
+
+    .create-modal-chip-desc {
+        display: block;
+        font-size: 11px;
+        font-weight: 400;
+        line-height: 1.35;
+        color: var(--st-text-muted, #9a9a9a);
     }
 
     .create-modal-chip-domain {
