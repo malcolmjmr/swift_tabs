@@ -1,14 +1,11 @@
 <script>
     import { createEventDispatcher, tick } from "svelte";
     import { chromeService } from "../../../services/chromeApi";
-    import {
-        APP_SUGGESTIONS_TTL_MS,
-        fetchAppSuggestions,
-    } from "../../../services/geminiClient";
     import { isSwiftAppsRow, resultFaviconKey } from "../omniboxShared.js";
     import { collectFirstAppsFromFolder } from "./appsFolderPreview.js";
     import OmniboxAppsFolderModal from "./OmniboxAppsFolderModal.svelte";
     import OmniboxSectionApps from "./OmniboxSectionApps.svelte";
+    import OmniboxSectionAppsDetailPanel from "./OmniboxSectionAppsDetailPanel.svelte";
 
     export let dataEnabled = false;
     export let isActiveSlide = false;
@@ -31,12 +28,6 @@
     let detailAppId = null;
     /** @type {'home' | 'folder' | 'library'} */
     let detailOpenedFrom = "home";
-    let appsSuggestionsOpen = false;
-    let appsSuggestionsLoading = false;
-    let appsSuggestionsError = "";
-    let appsDetailSuggestionsText = "";
-    let newQueueUrl = "";
-    let detailTitleEdit = "";
     /** @type {number | null} */
     let appsDragFromIndex = null;
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -476,19 +467,7 @@
                 : appsView === "folder"
                   ? "folder"
                   : "home");
-        const app = appsRegistryById[appId];
-        detailTitleEdit = app?.displayTitle || app?.title || "";
         appsView = "detail";
-        appsSuggestionsOpen = false;
-        appsSuggestionsError = "";
-        appsDetailSuggestionsText = "";
-        if (
-            app?.suggestionsCache?.text &&
-            Date.now() - (app.suggestionsCache.fetchedAt || 0) <
-                APP_SUGGESTIONS_TTL_MS
-        ) {
-            appsDetailSuggestionsText = app.suggestionsCache.text;
-        }
         visibleResults = [];
         selectedResultIndex = 0;
     }
@@ -593,89 +572,6 @@
     function onResultRowDblClick(i, item) {
         selectedResultIndex = i;
         onSwiftAppsDblClick(item);
-    }
-
-    async function persistDetailTitle() {
-        if (!detailAppId) return;
-        const t = detailTitleEdit.trim();
-        await chromeService.appsPutApp({
-            id: detailAppId,
-            displayTitle: t || undefined,
-        });
-        await loadAppsState();
-        applyAppsVisibleResults();
-    }
-
-    async function addQueueLink() {
-        const url = newQueueUrl.trim();
-        if (!detailAppId || !url) return;
-        let u = url;
-        if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
-        const app = appsRegistryById[detailAppId];
-        const links = [...(app?.savedLinks || [])];
-        const id = `lnk_${Date.now().toString(36)}`;
-        links.push({
-            id,
-            url: u,
-            title: "",
-            savedAt: Date.now(),
-        });
-        await chromeService.appsPutApp({ id: detailAppId, savedLinks: links });
-        newQueueUrl = "";
-        await loadAppsState();
-    }
-
-    async function removeQueueLink(linkId) {
-        if (!detailAppId) return;
-        const app = appsRegistryById[detailAppId];
-        const links = (app?.savedLinks || []).filter((l) => l.id !== linkId);
-        await chromeService.appsPutApp({ id: detailAppId, savedLinks: links });
-        await loadAppsState();
-    }
-
-    async function refreshAppSuggestions() {
-        if (!detailAppId) return;
-        const app = appsRegistryById[detailAppId];
-        if (!app) return;
-        appsSuggestionsLoading = true;
-        appsSuggestionsError = "";
-        try {
-            const { text } = await fetchAppSuggestions({
-                domain: app.domain,
-                title: app.displayTitle || app.title,
-            });
-            appsDetailSuggestionsText = text;
-            await chromeService.appsPutApp({
-                id: detailAppId,
-                suggestionsCache: { text, fetchedAt: Date.now() },
-            });
-            await loadAppsState();
-        } catch (e) {
-            appsSuggestionsError =
-                e instanceof Error ? e.message : "Suggestions failed";
-        } finally {
-            appsSuggestionsLoading = false;
-        }
-    }
-
-    async function addDetailAppToHome() {
-        if (!detailAppId) return;
-        await chromeService.appsAddToHome(detailAppId);
-        await loadAppsState();
-    }
-
-    async function removeDetailAppFromHome() {
-        if (!detailAppId) return;
-        await chromeService.appsRemoveFromHome(detailAppId);
-        await loadAppsState();
-        appsDetailBack();
-    }
-
-    async function deleteDetailApp() {
-        if (!detailAppId) return;
-        await chromeService.appsDeleteApp(detailAppId);
-        await loadAppsState();
-        appsDetailBack();
     }
 
     function onAppsDragStart(i, item, e) {
@@ -1030,25 +926,13 @@
 </script>
 
 {#if appsView === "detail"}
-    <OmniboxSectionApps
-        mode="detail"
+    <OmniboxSectionAppsDetailPanel
         {detailAppId}
         {appsRegistryById}
-        bind:detailTitleEdit
-        bind:newQueueUrl
-        bind:appsSuggestionsOpen
-        {appsSuggestionsLoading}
-        {appsSuggestionsError}
-        {appsDetailSuggestionsText}
         {appIdOnHomeLayout}
-        onPersistDetailTitle={() => void persistDetailTitle()}
-        onAddQueueLink={() => void addQueueLink()}
-        onRemoveQueueLink={(id) => void removeQueueLink(id)}
-        onRefreshAppSuggestions={() => void refreshAppSuggestions()}
-        onAddDetailAppToHome={() => void addDetailAppToHome()}
-        onRemoveDetailAppFromHome={() => void removeDetailAppFromHome()}
-        onDeleteDetailApp={() => void deleteDetailApp()}
         onLaunchSwiftApp={launchSwiftApp}
+        onReloadApps={loadAppsState}
+        onLeaveDetail={appsDetailBack}
         on:submit={() => dispatch("submit")}
         on:close={() => dispatch("close")}
     />
@@ -1072,7 +956,6 @@
             role="listbox"
         >
             <OmniboxSectionApps
-                mode="icons"
                 {visibleResults}
                 {selectedResultIndex}
                 showDropToHomeRail={appsView === "folder" &&

@@ -101,6 +101,16 @@ export function getResultFaviconSrc(item, faviconFailedByKey) {
 }
 
 /**
+ * @param {string} domain
+ */
+export function getUrlFaviconSrc(url) {
+    const domain = extractDomain(url);
+    return domain
+        ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`
+        : null;
+}
+
+/**
  * @param {object | null | undefined} item
  */
 export function isSwiftAppsRow(item) {

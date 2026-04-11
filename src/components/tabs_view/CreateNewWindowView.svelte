@@ -5,7 +5,7 @@
      */
     import { tick, onDestroy } from "svelte";
     import { chromeService } from "../../services/chromeApi";
-    import selectWindow2Icon from "../../icons/select-window-2.svg";
+    import tabIcon from "../../icons/tab.svg";
     import floatLandscapeIcon from "../../icons/float-landscape.svg";
     import dominoMaskIcon from "../../icons/domino-mask.svg";
 
@@ -13,7 +13,7 @@
     export let selectedRowKey = "new-default";
 
     const ROW_ICON_SRC = {
-        select_window_2: selectWindow2Icon,
+        tab: tabIcon,
         float_landscape_2: floatLandscapeIcon,
         domino_mask: dominoMaskIcon,
     };
@@ -21,13 +21,13 @@
     const ROWS = [
         {
             key: "new-default",
-            rowIcon: "select_window_2",
-            label: "Default",
+            rowIcon: "tab",
+            label: "Tabbed Window",
         },
         {
             key: "new-popup",
             rowIcon: "float_landscape_2",
-            label: "Popup",
+            label: "Popup Window",
         },
         {
             key: "new-incognito",
@@ -211,6 +211,7 @@
                 </button>
             </li>
         {/each}
+        <div class="history-list-padding"></div>
     </ul>
 </div>
 
@@ -273,7 +274,7 @@
     }
 
     .history-list-padding {
-        height: 10px;
+        min-height: 3px;
     }
 
     .history-list > li {
@@ -296,6 +297,7 @@
         border: none;
         box-sizing: border-box;
         box-shadow: inset 0 0 0 1px transparent;
+        opacity: 0.8;
         transition:
             background 0.1s,
             box-shadow 0.1s;
@@ -312,14 +314,13 @@
         width: 24px;
         height: 24px;
         object-fit: contain;
-        opacity: 0.55;
         padding: 0px;
         margin: 0px;
     }
 
-    .history-item.selected .history-item-icon.history-item-icon-svg,
-    .history-item:hover .history-item-icon.history-item-icon-svg {
-        opacity: 0.72;
+    .history-item.selected,
+    .history-item:hover {
+        opacity: 1;
     }
 
     .history-item:hover {

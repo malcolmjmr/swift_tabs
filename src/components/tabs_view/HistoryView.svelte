@@ -5,8 +5,9 @@
      */
     import { onMount, tick, onDestroy } from "svelte";
     import { chromeService } from "../../services/chromeApi";
-    import historyIcon from "../../icons/history.svg";
+    import historyIcon from "../../icons/recent-tab.svg";
     import folderIcon from "../../icons/folder.svg";
+    import desktopIcon from "../../icons/desktop-landscape.svg";
     import devicesIcon from "../../icons/devices.svg";
     import chevronRightIcon from "../../icons/chevron-right.svg";
 
@@ -50,6 +51,8 @@
                 return folderIcon;
             case "devices":
                 return devicesIcon;
+            case "desktop_landscape":
+                return desktopIcon;
             default:
                 return historyIcon;
         }
@@ -170,14 +173,14 @@
                     section: "recent",
                     label: "Recent tabs",
                     count: recentlyClosed.length,
-                    rowIcon: "history",
+                    rowIcon: "tab_recent",
                 },
                 {
                     key: ROOT_KEYS.saved,
                     section: "saved",
                     label: "Saved sessions",
                     count: savedFolders.length,
-                    rowIcon: "folder_special",
+                    rowIcon: "desktop_landscape",
                 },
                 {
                     key: ROOT_KEYS.devices,
@@ -643,15 +646,16 @@
                                 aria-hidden="true"
                             />
                             <span class="history-title">{row.label}</span>
-                            <span class="history-count">{row.count}</span>
-                            <span class="history-row-spacer" aria-hidden="true"
-                            ></span>
-                            <img
-                                src={chevronRightIcon}
-                                alt=""
-                                class="history-chevron history-chevron-svg"
-                                aria-hidden="true"
-                            />
+                            <div class="history-item-open-indicator">
+                                <span class="history-count">{row.count}</span>
+
+                                <img
+                                    src={chevronRightIcon}
+                                    alt=""
+                                    class="history-chevron history-chevron-svg"
+                                    aria-hidden="true"
+                                />
+                            </div>
                         </button>
                     {:else if historyPane === "deviceTabs"}
                         {#if row.isWindowHeader}
@@ -790,6 +794,7 @@
                     {/if}
                 </li>
             {/each}
+            <div class="history-list-padding"></div>
         </ul>
     {/if}
 </div>
@@ -909,7 +914,7 @@
     }
 
     .history-list-padding {
-        height: 10px;
+        min-height: 3px;
     }
 
     .history-list > li {
@@ -1058,6 +1063,8 @@
         text-align: left;
         cursor: pointer;
         color: #ffffff;
+        opacity: 0.8;
+
         background: transparent;
         border: none;
         box-sizing: border-box;
@@ -1084,6 +1091,10 @@
         flex: 1 1 0%;
         min-width: 0;
     }
+    .history-item-open-indicator {
+        display: flex;
+        flex-direction: row;
+    }
 
     .history-item--section .history-chevron-svg {
         flex-shrink: 0;
@@ -1098,7 +1109,6 @@
         width: 24px;
         height: 24px;
         object-fit: contain;
-        opacity: 0.55;
     }
 
     .history-item-icon-img {
@@ -1126,9 +1136,9 @@
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
     }
 
-    .history-item.selected .history-item-icon.history-item-icon-svg,
-    .history-item:hover .history-item-icon.history-item-icon-svg {
-        opacity: 0.72;
+    .history-item.selected,
+    .history-item:hover {
+        opacity: 1;
     }
 
     .history-count {
