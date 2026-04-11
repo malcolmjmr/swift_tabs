@@ -4,9 +4,15 @@
  * @param {object} folder
  * @param {Record<string, object>} registryById
  * @param {number} limit
+ * @param {(app: object) => boolean} [includeApp] — if provided, only include when it returns true
  * @returns {object[]}
  */
-export function collectFirstAppsFromFolder(folder, registryById, limit) {
+export function collectFirstAppsFromFolder(
+    folder,
+    registryById,
+    limit,
+    includeApp,
+) {
     /** @type {object[]} */
     const out = [];
     function walk(items) {
@@ -14,7 +20,7 @@ export function collectFirstAppsFromFolder(folder, registryById, limit) {
             if (out.length >= limit) return;
             if (ch.kind === "app") {
                 const app = registryById[ch.appId];
-                if (app) out.push(app);
+                if (app && (!includeApp || includeApp(app))) out.push(app);
             } else if (ch.kind === "folder") {
                 walk(ch.items || []);
             }

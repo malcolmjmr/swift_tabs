@@ -1,11 +1,17 @@
 <script>
     import { createEventDispatcher, tick } from "svelte";
     import { chromeService } from "../../../services/chromeApi";
-    import { isSwiftAppsRow, resultFaviconKey } from "../omniboxShared.js";
+    import {
+        appHiddenFromHomeStrip,
+        folderHiddenFromHomeStrip,
+        isSwiftAppsRow,
+        resultFaviconKey,
+    } from "../omniboxShared.js";
     import { collectFirstAppsFromFolder } from "./appsFolderPreview.js";
     import OmniboxAppsFolderModal from "./OmniboxAppsFolderModal.svelte";
     import OmniboxSectionApps from "./OmniboxSectionApps.svelte";
     import OmniboxSectionAppsDetailPanel from "./OmniboxSectionAppsDetailPanel.svelte";
+    import OmniboxSectionAppsFolderDetailPanel from "./OmniboxSectionAppsFolderDetailPanel.svelte";
 
     export let dataEnabled = false;
     export let isActiveSlide = false;
@@ -21,11 +27,13 @@
     /** @type {object[]} */
     let appsRegistryList = [];
     let appsLayout = { version: 1, items: [] };
-    /** @type {'home' | 'folder' | 'detail' | 'library'} */
+    /** @type {'home' | 'folder' | 'detail' | 'folderDetail' | 'library'} */
     let appsView = "home";
     /** @type {{ title: string, items: object[] }[]} */
     let appsFolderStack = [];
     let detailAppId = null;
+    /** @type {string | null} */
+    let detailFolderId = null;
     /** @type {'home' | 'folder' | 'library'} */
     let detailOpenedFrom = "home";
     /** @type {number | null} */
@@ -61,6 +69,7 @@
         appsView = "home";
         appsFolderStack = [];
         detailAppId = null;
+        detailFolderId = null;
         folderModalRoot = null;
     }
 
@@ -237,8 +246,8 @@
                 openAppsDetail(item.app.id);
             } else if (item.type === "stLibApp") {
                 openAppsDetail(item.app.id, "library");
-            } else if (item.type === "stFolder") {
-                openFolderForBrowse(item.folder);
+            } else             if (item.type === "stFolder") {
+                openFolderDetail(item.folder.id);
             } else if (item.type === "stAllApps") {
                 openAppsLibrary();
             }
@@ -288,6 +297,7 @@
                 const app = appsRegistryById[it.appId];
                 if (!app) continue;
                 if (!matchesAppQuery(app, q)) continue;
+                if (appHiddenFromHomeStrip(app)) continue;
                 rows.push({
                     type: "stApp",
                     app,
@@ -296,6 +306,7 @@
                 });
             } else if (it.kind === "folder") {
                 if (!folderMatchesQuery(it, q)) continue;
+                if (folderHiddenFromHomeStrip(it)) continue;
                 rows.push({
                     type: "stFolder",
                     folder: it,
@@ -305,6 +316,7 @@
                         it,
                         appsRegistryById,
                         9,
+                        (a) => !appHiddenFromHomeStrip(a),
                     ),
                 });
             }
@@ -327,6 +339,7 @@
                 const app = appsRegistryById[it.appId];
                 if (!app) continue;
                 if (!matchesAppQuery(app, q)) continue;
+                if (appHiddenFromHomeStrip(app)) continue;
                 rows.push({
                     type: "stApp",
                     app,
@@ -335,6 +348,7 @@
                 });
             } else if (it.kind === "folder") {
                 if (!folderMatchesQuery(it, q)) continue;
+                if (folderHiddenFromHomeStrip(it)) continue;
                 rows.push({
                     type: "stFolder",
                     folder: it,
@@ -344,6 +358,7 @@
                         it,
                         appsRegistryById,
                         9,
+                        (a) => !appHiddenFromHomeStrip(a),
                     ),
                 });
             }
@@ -391,7 +406,7 @@
 
     function applyAppsVisibleResults() {
         const q = debouncedQuery.trim().toLowerCase();
-        if (appsView === "detail") {
+        if (appsView === "detail" || appsView === "folderDetail") {
             visibleResults = [];
             selectedResultIndex = 0;
             return;
@@ -459,6 +474,7 @@
     }
 
     function openAppsDetail(appId, from) {
+        detailFolderId = null;
         detailAppId = appId;
         detailOpenedFrom =
             from ||
@@ -472,11 +488,62 @@
         selectedResultIndex = 0;
     }
 
+    /** @param {string} folderId @param {'home'|'folder'|'library'|undefined} [from] */
+    function openFolderDetail(folderId, from) {
+        detailAppId = null;
+        detailFolderId = folderId;
+        detailOpenedFrom =
+            from ||
+            (appsView === "library"
+                ? "library"
+                : appsView === "folder"
+                  ? "folder"
+                  : "home");
+        appsView = "folderDetail";
+        visibleResults = [];
+        selectedResultIndex = 0;
+    }
+
+    function folderDetailBack() {
+        appsView = detailOpenedFrom;
+        detailFolderId = null;
+        applyAppsVisibleResults();
+        selectedResultIndex = 0;
+    }
+
     function appsDetailBack() {
         appsView = detailOpenedFrom;
         detailAppId = null;
+        detailFolderId = null;
         applyAppsVisibleResults();
         selectedResultIndex = 0;
+    }
+
+    /**
+     * Deep-merge folder fields into layout and persist.
+     * @param {string} folderId
+     * @param {Record<string, unknown>} patch
+     */
+    async function persistFolderFields(folderId, patch) {
+        const raw = JSON.parse(JSON.stringify(appsLayout.items || []));
+        /** @param {object[]} items */
+        function walk(items) {
+            return (items || []).map((node) => {
+                if (node.kind === "folder") {
+                    if (node.id === folderId) {
+                        return { ...node, ...patch };
+                    }
+                    return {
+                        ...node,
+                        items: walk(node.items || []),
+                    };
+                }
+                return node;
+            });
+        }
+        appsLayout = { ...appsLayout, items: walk(raw) };
+        await chromeService.appsPutLayout(appsLayout);
+        await loadAppsState();
     }
 
     function appIdOnHomeLayout(appId) {
@@ -492,6 +559,10 @@
 
     async function launchSwiftApp(app) {
         if (!app?.defaultUrl) return;
+        if (app.access?.restricted && app.access?.blockNavigation) {
+            console.warn("Swift Tabs: launch blocked by access policy");
+            return;
+        }
         await chromeService.createTab({ url: app.defaultUrl, active: true });
         await chromeService.appsPutApp({
             id: app.id,
@@ -803,6 +874,10 @@
             appsDetailBack();
             return true;
         }
+        if (appsView === "folderDetail") {
+            folderDetailBack();
+            return true;
+        }
         if (appsView === "library") {
             appsView = "home";
             applyAppsVisibleResults();
@@ -841,6 +916,14 @@
                 }
                 return true;
             }
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                event.preventDefault();
+                return true;
+            }
+            return false;
+        }
+
+        if (appsView === "folderDetail") {
             if (event.key === "ArrowUp" || event.key === "ArrowDown") {
                 event.preventDefault();
                 return true;
@@ -930,11 +1013,18 @@
         {detailAppId}
         {appsRegistryById}
         {appIdOnHomeLayout}
-        onLaunchSwiftApp={launchSwiftApp}
         onReloadApps={loadAppsState}
         onLeaveDetail={appsDetailBack}
         on:submit={() => dispatch("submit")}
         on:close={() => dispatch("close")}
+    />
+{:else if appsView === "folderDetail"}
+    <OmniboxSectionAppsFolderDetailPanel
+        {detailFolderId}
+        {appsLayout}
+        onReloadApps={loadAppsState}
+        onLeaveDetail={folderDetailBack}
+        {persistFolderFields}
     />
 {:else}
     <OmniboxAppsFolderModal
@@ -945,6 +1035,10 @@
         onFaviconError={markResultFaviconFailed}
         onClose={closeFolderModal}
         onLaunchApp={modalLaunchApp}
+        onFolderSettings={(id) => {
+            closeFolderModal();
+            openFolderDetail(id, "home");
+        }}
     />
     {#if visibleResults.length === 0}
         <div class="empty-state">{emptyMessage}</div>

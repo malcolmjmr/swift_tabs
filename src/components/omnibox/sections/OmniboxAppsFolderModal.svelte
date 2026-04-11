@@ -12,6 +12,8 @@
     /** @param {object} app @returns {void | Promise<void>} */
     export let onLaunchApp = () => {};
     export let onClose = () => {};
+    /** @param {string} folderId */
+    export let onFolderSettings = null;
     /** @param {object} item */
     export let onFaviconError = () => {};
 
@@ -107,6 +109,16 @@
                 <h2 id="folder-modal-title" class="folder-modal-title">
                     {top.title}
                 </h2>
+                {#if onFolderSettings}
+                    <button
+                        type="button"
+                        class="folder-modal-icon-btn"
+                        aria-label="Folder access and routines"
+                        on:click={() => onFolderSettings(top.id)}
+                    >
+                        <span class="material-symbols-rounded">settings</span>
+                    </button>
+                {/if}
                 <button
                     type="button"
                     class="folder-modal-icon-btn"

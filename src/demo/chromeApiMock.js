@@ -501,6 +501,10 @@ export const chromeService = {
         return { ok: true };
     },
 
+    async appsRunRoutine() {
+        return { ok: true };
+    },
+
     async linkQueuePush() {
         return { ok: true };
     },

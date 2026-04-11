@@ -12,7 +12,10 @@ import {
     newFolderId,
     normalizeDomain,
     parseLayout,
+    stripLayoutForPersist,
 } from "./appsModel.js";
+import { enrichAppsStateWithAccess } from "./appsAccess.js";
+import { syncAppRoutineAlarms } from "./appsRoutines.js";
 
 /**
  * Registered apps whose domains appear in Chrome history, ordered by most recent visit.
@@ -91,10 +94,13 @@ export function pruneEmptyFolders(items) {
  * @param {import('./appsModel.js').AppHomeLayout} layout
  */
 export async function appsPutLayout(layout) {
-    const items = pruneEmptyFolders(layout.items || []);
+    const cleaned = stripLayoutForPersist(layout);
+    const items = pruneEmptyFolders(cleaned.items || []);
     await chrome.storage.local.set({
-        [APP_HOME_LAYOUT_KEY]: { ...layout, items },
+        [APP_HOME_LAYOUT_KEY]: { ...cleaned, items },
     });
+    await appsRecomputeAccessBlockList();
+    void syncAppRoutineAlarms();
 }
 
 /**
@@ -129,6 +135,16 @@ export async function appsPutApp(patch) {
     const prev = (await storage.get(COLLECTION, patch.id)) || {};
     const next = { ...prev, ...patch, id: patch.id };
     await storage.put(COLLECTION, /** @type {{ id: string }} */ (next));
+    await appsRecomputeAccessBlockList();
+    void syncAppRoutineAlarms();
+}
+
+/**
+ * Refresh tab-blocking host list after app/layout changes (also run from appsGetState).
+ */
+export async function appsRecomputeAccessBlockList() {
+    const [apps, layout] = await Promise.all([appsListAll(), appsGetLayout()]);
+    await enrichAppsStateWithAccess(apps, layout);
 }
 
 /**
@@ -406,5 +422,11 @@ export async function appsGetState() {
         appsGetLayout(),
         appsRecentFromBrowserHistory(9),
     ]);
-    return { apps, layout, recentHistoryPreview };
+    const { apps: enrichedApps, layout: enrichedLayout } =
+        await enrichAppsStateWithAccess(apps, layout);
+    return {
+        apps: enrichedApps,
+        layout: enrichedLayout,
+        recentHistoryPreview,
+    };
 }

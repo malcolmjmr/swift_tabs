@@ -122,3 +122,13 @@ export function isSwiftAppsRow(item) {
         t === "stLibApp"
     );
 }
+
+/** App hidden from home/folder strip when access policy applies. */
+export function appHiddenFromHomeStrip(app) {
+    return !!(app?.access?.restricted && app.access?.hideFromHome);
+}
+
+/** Folder tile hidden on home when folder access policy applies. */
+export function folderHiddenFromHomeStrip(folder) {
+    return !!(folder?.access?.restricted && folder.access?.hideFromHome);
+}

@@ -7,8 +7,19 @@ import {
     appsMoveAppToHomeRoot,
     appsPutApp,
     appsPutLayout,
+    appsRecomputeAccessBlockList,
     appsRemoveFromHome,
 } from "./src/services/apps/appsBackground.js";
+import {
+    executeAppRoutine,
+    executeFolderRoutine,
+    handleRoutineAlarmName,
+    syncAppRoutineAlarms,
+} from "./src/services/apps/appsRoutines.js";
+import {
+    getCachedAccessBlockPatterns,
+    hostnameMatchesBlockedPatterns,
+} from "./src/services/apps/appsAccess.js";
 import {
     createBlankObjective,
     isTimeframe,
@@ -16,6 +27,12 @@ import {
 import { saveObjective } from "./src/planner/objectiveRepository.js";
 
 chrome.runtime.onInstalled.addListener(onInstalled);
+chrome.runtime.onStartup.addListener(() => {
+    void appsRecomputeAccessBlockList();
+    void syncAppRoutineAlarms();
+});
+void appsRecomputeAccessBlockList();
+void syncAppRoutineAlarms();
 chrome.runtime.onMessage.addListener(onRuntimeMessage);
 chrome.tabs.onUpdated.addListener(onTabUpdated);
 chrome.tabs.onActivated.addListener(onTabActivated);
@@ -32,6 +49,13 @@ const LINK_QUEUE_SESSION_KEY = "swiftTabsLinkQueueByTab";
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === PLANNER_RECONCILE_ALARM) {
         chrome.runtime.sendMessage({ type: "PLANNER_RECONCILE" }).catch(() => { });
+        return;
+    }
+    if (
+        alarm.name.startsWith("appRoutine:") ||
+        alarm.name.startsWith("folderRoutine:")
+    ) {
+        void handleRoutineAlarmName(alarm.name);
     }
 });
 
@@ -48,6 +72,8 @@ async function onInstalled() {
     chrome.alarms.create(PLANNER_RECONCILE_ALARM, {
         periodInMinutes: 24 * 60,
     });
+    void appsRecomputeAccessBlockList();
+    void syncAppRoutineAlarms();
 
     chrome.tabs.query({}).then(tabs => {
         for (const tab of tabs) {
@@ -66,6 +92,10 @@ function onTabUpdated(tabId, changeInfo, tab) {
         changeInfo: changeInfo,
         tab: tab,
     });
+    const url = changeInfo.url || tab?.url;
+    if (url && /^https?:\/\//i.test(url)) {
+        void maybeCloseTabForAppAccess(tabId, url);
+    }
     // Content scripts do not receive runtime.sendMessage; broadcast so tab store
     // (audible / mutedInfo) and TabsView stay in sync.
     if (
@@ -73,6 +103,22 @@ function onTabUpdated(tabId, changeInfo, tab) {
         changeInfo.mutedInfo !== undefined
     ) {
         void broadcastTabsDataChanged();
+    }
+}
+
+/**
+ * @param {number} tabId
+ * @param {string} url
+ */
+async function maybeCloseTabForAppAccess(tabId, url) {
+    try {
+        const hostname = new URL(url).hostname;
+        const patterns = getCachedAccessBlockPatterns();
+        if (hostnameMatchesBlockedPatterns(hostname, patterns)) {
+            await chrome.tabs.remove(tabId);
+        }
+    } catch {
+        /* ignore */
     }
 }
 
@@ -948,6 +994,15 @@ const chromeApiHandlers = {
 
     async APPS_PUT_APP({ app }) {
         await appsPutApp(app);
+        return { ok: true };
+    },
+
+    async APPS_RUN_ROUTINE({ scope, id, routineId }) {
+        if (scope === "folder") {
+            await executeFolderRoutine(id, routineId);
+        } else {
+            await executeAppRoutine(id, routineId);
+        }
         return { ok: true };
     },
 

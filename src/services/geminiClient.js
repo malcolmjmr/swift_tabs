@@ -452,3 +452,122 @@ export async function fetchAppSuggestions(app) {
     const footer = formatGroundingFooter(raw);
     return { text: body + footer };
 }
+
+/**
+ * User-defined grounded fetch for one app (scheduled routine).
+ *
+ * @param {{ domain: string, title?: string, instructions: string, outputFormat?: 'text'|'links' }} opts
+ * @returns {Promise<{ text: string, links?: { title?: string, url: string }[], raw: object }>}
+ */
+export async function fetchAppRoutineRun(opts) {
+    const apiKey = await getGeminiApiKey();
+    const domain = (opts.domain || "").trim() || "unknown";
+    const title = (opts.title || domain).trim();
+    const instructions = (opts.instructions || "").trim() || "Summarize recent updates.";
+    const outputFormat = opts.outputFormat === "links" ? "links" : "text";
+
+    const systemInstruction =
+        "You assist with monitoring websites using Google Search. Be factual; cite sources. " +
+        (outputFormat === "links"
+            ? 'Output valid JSON only, no markdown fences: {"links":[{"title":"","url":"https://..."}]} — 3–10 items when possible.'
+            : "Plain text only, short paragraphs. No JSON.");
+
+    const userText =
+        `Site domain: ${domain}\nUser-visible title: ${title}\n\n` +
+        `Instructions:\n${instructions}`;
+
+    const { text, raw } = await generateWithGoogleSearch(apiKey, {
+        systemInstruction,
+        userText,
+    });
+
+    if (outputFormat === "text") {
+        const footer = formatGroundingFooter(raw);
+        return { text: (text || "").trim() + footer, raw };
+    }
+
+    let parsed;
+    try {
+        parsed = parseJsonLoose(text || "");
+    } catch {
+        throw new Error("Could not parse routine JSON from the model.");
+    }
+    const rawLinks = Array.isArray(parsed?.links) ? parsed.links : [];
+    /** @type {{ title?: string, url: string }[]} */
+    const links = rawLinks
+        .map((l) => ({
+            title: typeof l.title === "string" ? l.title.trim() : undefined,
+            url: typeof l.url === "string" ? l.url.trim() : "",
+        }))
+        .filter((l) => /^https?:\/\//i.test(l.url));
+    const lines = links.map((l) =>
+        l.title ? `• ${l.title}\n  ${l.url}` : `• ${l.url}`,
+    );
+    const body = lines.length ? lines.join("\n") : "No links returned.";
+    const footer = formatGroundingFooter(raw);
+    return { text: body + footer, links, raw };
+}
+
+/**
+ * User-defined grounded fetch for a folder (multiple domains).
+ *
+ * @param {{ folderTitle?: string, apps: { domain: string, title?: string }[], instructions: string, outputFormat?: 'text'|'links' }} opts
+ * @returns {Promise<{ text: string, links?: { title?: string, url: string, domain?: string }[], raw: object }>}
+ */
+export async function fetchFolderRoutineRun(opts) {
+    const apiKey = await getGeminiApiKey();
+    const folderTitle = (opts.folderTitle || "Folder").trim();
+    const instructions = (opts.instructions || "").trim() || "Summarize updates for these sites.";
+    const outputFormat = opts.outputFormat === "links" ? "links" : "text";
+    const lines = (opts.apps || [])
+        .map((a) => {
+            const d = (a.domain || "").trim();
+            const t = (a.title || d).trim();
+            return d ? `- ${d} (${t})` : "";
+        })
+        .filter(Boolean)
+        .join("\n");
+
+    const systemInstruction =
+        "You monitor multiple related websites using Google Search. Be factual. " +
+        (outputFormat === "links"
+            ? 'Output valid JSON only, no markdown fences: {"links":[{"title":"","url":"https://...","domain":""}]} — optional domain when known.'
+            : "Plain text only with short sections per site when helpful. No JSON.");
+
+    const userText =
+        `Folder / group: ${folderTitle}\n\nSites:\n${lines || "(none)"}\n\n` +
+        `Instructions:\n${instructions}`;
+
+    const { text, raw } = await generateWithGoogleSearch(apiKey, {
+        systemInstruction,
+        userText,
+    });
+
+    if (outputFormat === "text") {
+        const footer = formatGroundingFooter(raw);
+        return { text: (text || "").trim() + footer, raw };
+    }
+
+    let parsed;
+    try {
+        parsed = parseJsonLoose(text || "");
+    } catch {
+        throw new Error("Could not parse folder routine JSON from the model.");
+    }
+    const rawLinks = Array.isArray(parsed?.links) ? parsed.links : [];
+    /** @type {{ title?: string, url: string, domain?: string }[]} */
+    const links = rawLinks
+        .map((l) => ({
+            title: typeof l.title === "string" ? l.title.trim() : undefined,
+            url: typeof l.url === "string" ? l.url.trim() : "",
+            domain:
+                typeof l.domain === "string" ? l.domain.trim() : undefined,
+        }))
+        .filter((l) => /^https?:\/\//i.test(l.url));
+    const outLines = links.map((l) =>
+        l.title ? `• ${l.title}\n  ${l.url}` : `• ${l.url}`,
+    );
+    const body = outLines.length ? outLines.join("\n") : "No links returned.";
+    const footer = formatGroundingFooter(raw);
+    return { text: body + footer, links, raw };
+}

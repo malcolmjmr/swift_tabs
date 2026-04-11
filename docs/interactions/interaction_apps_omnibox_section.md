@@ -20,16 +20,21 @@
 | 5 | **Click** on app row | Same as Space (launch) | — |
 | 6 | **Double-click** on app row | Same as Enter (detail) | — |
 | 7 | **Enter** / **Space** / click on folder | Open folder children list | `appsView = folder`, stack push |
+| 7b | **Long-press** folder tile | Open **folder detail** (access + routines) | `appsView = folderDetail` |
+| 7c | Folder modal **settings** | Close modal; open folder detail | `folderDetail` |
 | 8 | Select **All apps** + Enter/Space/click | Open library list | `appsView = library` |
-| 9 | **Backspace** in detail | Return to home/folder/library per `detailOpenedFrom` | Pop `appsView` |
+| 9 | **Backspace** in app or folder detail | Return to home/folder/library per `detailOpenedFrom` | Pop `appsView` |
 | 10 | **Backspace** in library | Return to home | `appsView = home` |
 | 11 | **Backspace** in folder | Pop folder stack or home | — |
 | 12 | **Backspace** on home Apps | Close section results (picker) | — |
-| 13 | **Long-press** (~480ms) app/folder tile | Enter arrange mode (`appsEditMode`) | Drag enabled |
+| 13 | **Long-press** (~480ms) app tile | Open app detail (same as Enter) | `appsView = detail` |
 | 14 | **Escape** while arranging | Exit arrange; keep omnibox open | `appsEditMode = false` |
 | 15 | Drag in arrange | Reorder; persist layout | `APPS_PUT_LAYOUT` |
 | 16 | Home: drop app on app | Create folder with both apps | `APPS_MERGE_INTO_FOLDER` |
 | 17 | Detail: **Refresh** suggestions | Gemini + Google Search; cache on record | `suggestionsCache` |
+| 18 | Detail / folder detail: **Save access** | Persist `accessPolicy`; `APPS_GET_STATE` adds `access` + updates tab block list | `APPS_PUT_APP` or `APPS_PUT_LAYOUT` |
+| 19 | Restricted app | Hidden from home/folder strips (not library); launch blocked; matching `https` navigations **close tab** | Background `onTabUpdated` |
+| 20 | **Save routines** / alarm / **Run now** | `fetchAppRoutineRun` or `fetchFolderRoutineRun`; persist `lastOutput` (folder on layout node); optional links → queues | `APPS_RUN_ROUTINE`, `chrome.alarms` |
 
 ### Visual States
 
@@ -38,5 +43,5 @@
 
 ### Error Cases
 
-- Missing Gemini API key: suggestions show error from `fetchAppSuggestions`.
+- Missing Gemini API key: suggestions and routines show errors from `fetchAppSuggestions` / routine runners.
 - Stale layout references: missing app rows skipped when rendering.

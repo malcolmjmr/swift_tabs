@@ -1,51 +1,27 @@
 <script>
-    import { createEventDispatcher } from "svelte";
+    import { newRoutineId } from "../../../services/apps/appsModel.js";
     import { chromeService } from "../../../services/chromeApi";
-    import {
-        APP_SUGGESTIONS_TTL_MS,
-        fetchAppSuggestions,
-    } from "../../../services/geminiClient";
-    import { extractDomain, getUrlFaviconSrc } from "../omniboxShared.js";
-    import deleteIcon from "../../../icons/delete.svg";
-    import { newRoutineId, normalizeDomain } from "../../../services/apps/appsModel.js";
-
-    const dispatch = createEventDispatcher();
 
     /** @type {string | null} */
-    export let detailAppId = null;
-    /** @type {Record<string, object>} */
-    export let appsRegistryById = {};
-    /** @param {string} id */
-    export let appIdOnHomeLayout = () => false;
+    export let detailFolderId = null;
+    /** @type {{ version: number, items: object[] }} */
+    export let appsLayout = { version: 1, items: [] };
     export let onReloadApps = async () => {};
     export let onLeaveDetail = () => {};
+    /** @param {string} folderId @param {Record<string, unknown>} patch */
+    export let persistFolderFields = async (_folderId, _patch) => {};
 
-    let detailTitleEdit = "";
-    let newQueueUrl = "";
-    let appsSuggestionsOpen = false;
-    let appsSuggestionsLoading = false;
-    let appsSuggestionsError = "";
-    let appsDetailSuggestionsText = "";
-
-    /** @type {string | null} */
-    let lastDetailAppId = null;
-
-    let accessEnabled = false;
-    let accessHideHome = true;
-    let accessBlockNav = true;
-    let schedEnabled = false;
-    let schedStart = "09:00";
-    let schedEnd = "17:00";
-    /** @type {boolean[]} */
-    let schedDays = [true, true, true, true, true, true, true];
-    let freqEnabled = false;
-    let freqMax = 20;
-    let freqWindowHours = 24;
-    /** @type {object[]} */
-    let routines = [];
-    let routineRunError = "";
-
-    const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    /** @param {object[]} items @param {string} id */
+    function findFolderDeep(items, id) {
+        for (const it of items || []) {
+            if (it.kind === "folder") {
+                if (it.id === id) return it;
+                const inner = findFolderDeep(it.items || [], id);
+                if (inner) return inner;
+            }
+        }
+        return null;
+    }
 
     /** @param {string} t */
     function timeToMinutes(t) {
@@ -64,41 +40,39 @@
         return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
     }
 
-    /** @param {object} appRec @param {string} url */
-    function queueOpenBlocked(appRec, url) {
-        if (!(appRec?.access?.restricted && appRec.access?.blockNavigation)) {
-            return false;
-        }
-        try {
-            const h = normalizeDomain(extractDomain(url));
-            const d = normalizeDomain(appRec.domain);
-            return !!(h && d && (h === d || h.endsWith("." + d)));
-        } catch {
-            return false;
-        }
-    }
+    const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    $: app = detailAppId ? appsRegistryById[detailAppId] : undefined;
-    $: faviconSrc = app ? getUrlFaviconSrc(app.defaultUrl) : null;
+    $: folder =
+        detailFolderId != null
+            ? findFolderDeep(appsLayout.items || [], detailFolderId)
+            : null;
 
-    $: if (detailAppId == null) {
-        lastDetailAppId = null;
-    } else if (detailAppId !== lastDetailAppId && app) {
-        lastDetailAppId = detailAppId;
-        appsSuggestionsOpen = false;
-        appsSuggestionsLoading = false;
-        appsSuggestionsError = "";
-        appsDetailSuggestionsText = "";
-        newQueueUrl = "";
-        detailTitleEdit = app?.displayTitle || app?.title || "";
-        if (
-            app?.suggestionsCache?.text &&
-            Date.now() - (app.suggestionsCache.fetchedAt || 0) <
-                APP_SUGGESTIONS_TTL_MS
-        ) {
-            appsDetailSuggestionsText = app.suggestionsCache.text;
-        }
-        const p = app.accessPolicy;
+    let folderTitleEdit = "";
+    let accessEnabled = false;
+    let accessHideHome = true;
+    let accessBlockNav = true;
+    let schedEnabled = false;
+    let schedStart = "09:00";
+    let schedEnd = "17:00";
+    /** @type {boolean[]} */
+    let schedDays = [true, true, true, true, true, true, true];
+    let freqEnabled = false;
+    let freqMax = 20;
+    let freqWindowHours = 24;
+
+    /** @type {object[]} */
+    let routines = [];
+    let routineRunError = "";
+
+    /** @type {string | null} */
+    let lastFolderId = null;
+
+    $: if (detailFolderId == null) {
+        lastFolderId = null;
+    } else if (detailFolderId !== lastFolderId && folder) {
+        lastFolderId = detailFolderId;
+        folderTitleEdit = folder.title || "";
+        const p = folder.accessPolicy;
         accessEnabled = !!(p && p.enabled);
         accessHideHome = p?.hideFromHomeWhenRestricted !== false;
         accessBlockNav = p?.blockNavigationWhenRestricted !== false;
@@ -111,8 +85,6 @@
                 schedDays = [0, 1, 2, 3, 4, 5, 6].map((d) =>
                     w.daysOfWeek.includes(d),
                 );
-            } else {
-                schedDays = [true, true, true, true, true, true, true];
             }
         }
         const f = p?.frequency;
@@ -121,76 +93,20 @@
             freqMax = f.maxVisits ?? 20;
             freqWindowHours = f.windowHours ?? 24;
         }
-        routines = JSON.parse(JSON.stringify(app.fetchRoutines || []));
+        routines = JSON.parse(JSON.stringify(folder.fetchRoutines || []));
         routineRunError = "";
     }
 
-    async function persistDetailTitle() {
-        if (!detailAppId) return;
-        const t = detailTitleEdit.trim();
-        await chromeService.appsPutApp({
-            id: detailAppId,
-            displayTitle: t || undefined,
-        });
+    async function saveFolderTitle() {
+        if (!detailFolderId) return;
+        const t = folderTitleEdit.trim();
+        await persistFolderFields(detailFolderId, { title: t || "Folder" });
         await onReloadApps();
-    }
-
-    async function removeQueueLink(linkId) {
-        if (!detailAppId) return;
-        const app = appsRegistryById[detailAppId];
-        const links = (app?.savedLinks || []).filter((l) => l.id !== linkId);
-        await chromeService.appsPutApp({ id: detailAppId, savedLinks: links });
-        await onReloadApps();
-    }
-
-    async function refreshAppSuggestions() {
-        if (!detailAppId) return;
-        const app = appsRegistryById[detailAppId];
-        if (!app) return;
-        appsSuggestionsLoading = true;
-        appsSuggestionsError = "";
-        try {
-            const { text } = await fetchAppSuggestions({
-                domain: app.domain,
-                title: app.displayTitle || app.title,
-            });
-            appsDetailSuggestionsText = text;
-            await chromeService.appsPutApp({
-                id: detailAppId,
-                suggestionsCache: { text, fetchedAt: Date.now() },
-            });
-            await onReloadApps();
-        } catch (e) {
-            appsSuggestionsError =
-                e instanceof Error ? e.message : "Suggestions failed";
-        } finally {
-            appsSuggestionsLoading = false;
-        }
-    }
-
-    async function addDetailAppToHome() {
-        if (!detailAppId) return;
-        await chromeService.appsAddToHome(detailAppId);
-        await onReloadApps();
-    }
-
-    async function removeDetailAppFromHome() {
-        if (!detailAppId) return;
-        await chromeService.appsRemoveFromHome(detailAppId);
-        await onReloadApps();
-        onLeaveDetail();
-    }
-
-    async function deleteDetailApp() {
-        if (!detailAppId) return;
-        await chromeService.appsDeleteApp(detailAppId);
-        await onReloadApps();
-        onLeaveDetail();
     }
 
     function buildAccessPolicy() {
         if (!accessEnabled) return undefined;
-        /** @type {Record<string, unknown>} */
+        /** @type {object} */
         const policy = {
             enabled: true,
             hideFromHomeWhenRestricted: accessHideHome,
@@ -220,18 +136,16 @@
     }
 
     async function saveAccess() {
-        if (!detailAppId) return;
-        await chromeService.appsPutApp({
-            id: detailAppId,
+        if (!detailFolderId) return;
+        await persistFolderFields(detailFolderId, {
             accessPolicy: buildAccessPolicy(),
         });
         await onReloadApps();
     }
 
     async function saveRoutines() {
-        if (!detailAppId) return;
-        await chromeService.appsPutApp({
-            id: detailAppId,
+        if (!detailFolderId) return;
+        await persistFolderFields(detailFolderId, {
             fetchRoutines: routines,
         });
         await onReloadApps();
@@ -258,10 +172,14 @@
 
     /** @param {string} routineId */
     async function runRoutineNow(routineId) {
-        if (!detailAppId) return;
+        if (!detailFolderId) return;
         routineRunError = "";
         try {
-            await chromeService.appsRunRoutine("app", detailAppId, routineId);
+            await chromeService.appsRunRoutine(
+                "folder",
+                detailFolderId,
+                routineId,
+            );
             await onReloadApps();
         } catch (e) {
             routineRunError =
@@ -272,57 +190,30 @@
 
 <div class="apps-detail-panel">
     <div class="apps-detail-scroll">
-        {#if app}
-            <div class="apps-detail-header">
-                {#if faviconSrc}
-                    <div class="app-detail-icon">
-                        <img src={faviconSrc} alt={app.title} />
-                    </div>
-                {/if}
-
-                <input
-                    id="app-title-edit"
-                    class="apps-detail-input"
-                    bind:value={detailTitleEdit}
-                    on:blur={() => void persistDetailTitle()}
-                />
-
-                <div class="apps-detail-actions">
-                    {#if !appIdOnHomeLayout(app.id)}
-                        <button
-                            type="button"
-                            class="apps-detail-btn"
-                            on:click={() => void addDetailAppToHome()}
-                        >
-                            Add to home
-                        </button>
-                    {:else}
-                        <button
-                            type="button"
-                            class="apps-detail-btn"
-                            on:click={() => void removeDetailAppFromHome()}
-                        >
-                            Remove from home
-                        </button>
-                    {/if}
-                    <button
-                        type="button"
-                        class="apps-detail-btn apps-detail-btn--danger"
-                        on:click={() => void deleteDetailApp()}
-                    >
-                        <img src={deleteIcon} alt="Delete app" />
-                    </button>
-                </div>
+        {#if folder}
+            <div class="apps-detail-header-row">
+                <button
+                    type="button"
+                    class="apps-detail-btn"
+                    on:click={() => onLeaveDetail()}>Back</button
+                >
             </div>
-            {#if app.access}
+            <div class="apps-detail-section-title">Folder</div>
+            <input
+                class="apps-detail-input"
+                bind:value={folderTitleEdit}
+                on:blur={() => void saveFolderTitle()}
+            />
+
+            {#if folder.access}
                 <div class="access-summary">
-                    <div class="apps-detail-section-title">Access status</div>
-                    {app.access.restricted
+                    <span class="apps-detail-section-title">Status</span>
+                    {folder.access.restricted
                         ? "Restricted"
                         : "Not restricted"}
-                    {#if app.access.reasons?.length}
+                    {#if folder.access.reasons?.length}
                         <div class="access-reasons">
-                            {app.access.reasons.join(" · ")}
+                            {folder.access.reasons.join(" · ")}
                         </div>
                     {/if}
                 </div>
@@ -341,6 +232,7 @@
                 ><input type="checkbox" bind:checked={accessBlockNav} /> Block
                 navigation (close tab)</label
             >
+
             <label class="apps-check"
                 ><input type="checkbox" bind:checked={schedEnabled} /> Blocked time
                 window</label
@@ -370,9 +262,10 @@
                     {/each}
                 </div>
             {/if}
+
             <label class="apps-check"
                 ><input type="checkbox" bind:checked={freqEnabled} /> Visit limit
-                (Chrome history)</label
+                (Chrome history, sum of apps in folder)</label
             >
             {#if freqEnabled}
                 <div class="apps-row">
@@ -392,6 +285,7 @@
                     </select>
                 </div>
             {/if}
+
             <button
                 type="button"
                 class="apps-detail-btn"
@@ -426,7 +320,7 @@
                             bind:value={r.outputFormat}
                         >
                             <option value="text">Output: text</option>
-                            <option value="links">Output: links → queue</option>
+                            <option value="links">Output: links → app queues</option>
                         </select>
                         {#if r.schedule?.kind === "interval"}
                             <span class="apps-muted">Every</span>
@@ -506,116 +400,36 @@
                 class="apps-detail-btn"
                 on:click={() => void saveRoutines()}>Save routines</button
             >
-
-            {#if (app.savedLinks || []).length > 0}
-                <div class="apps-detail-section-title">Queue</div>
-                <ul class="apps-queue-list">
-                    {#each app.savedLinks || [] as link (link.id)}
-                        <li class="apps-queue-row">
-                            <button
-                                type="button"
-                                class="apps-queue-link"
-                                disabled={queueOpenBlocked(app, link.url)}
-                                on:click={() => {
-                                    if (queueOpenBlocked(app, link.url)) return;
-                                    void chromeService
-                                        .createTab({
-                                            url: link.url,
-                                            active: true,
-                                        })
-                                        .then(() => {
-                                            dispatch("submit");
-                                            dispatch("close");
-                                        });
-                                }}
-                            >
-                                {link.title ||
-                                    link.url.replace(/^https?:\/\//i, "")}
-                            </button>
-                            <button
-                                type="button"
-                                class="apps-queue-remove"
-                                aria-label="Remove link"
-                                on:click={() => void removeQueueLink(link.id)}
-                            >
-                                ×
-                            </button>
-                        </li>
-                    {/each}
-                </ul>
-            {/if}
-            {#if app.suggestionsCache?.text}
-                <div class="apps-detail-section-title">Updates</div>
-                <button
-                    type="button"
-                    class="apps-detail-btn"
-                    on:click={() => {
-                        appsSuggestionsOpen = !appsSuggestionsOpen;
-                    }}
-                >
-                    {appsSuggestionsOpen ? "Hide" : "Show"} suggestions (search-backed)
-                </button>
-            {/if}
-            {#if appsSuggestionsOpen}
-                <button
-                    type="button"
-                    class="apps-detail-btn"
-                    disabled={appsSuggestionsLoading}
-                    on:click={() => void refreshAppSuggestions()}
-                >
-                    {appsSuggestionsLoading ? "Loading…" : "Refresh"}
-                </button>
-                {#if appsSuggestionsError}
-                    <div class="news-detail-error">
-                        {appsSuggestionsError}
-                    </div>
-                {/if}
-                {#if appsDetailSuggestionsText}
-                    <pre
-                        class="apps-suggestions-text">{appsDetailSuggestionsText}</pre>
-                {/if}
-            {/if}
         {:else}
-            <div class="empty-state">App not found</div>
+            <div class="empty-state">Folder not found</div>
         {/if}
     </div>
 </div>
 
 <style>
+    .apps-detail-header-row {
+        margin-bottom: 8px;
+    }
     .apps-detail-panel {
         display: flex;
         flex-direction: column;
         min-height: 120px;
         max-height: 480px;
     }
-
     .apps-detail-scroll {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
         padding: 12px 14px;
     }
-    .apps-detail-header {
-        display: flex;
-        flex-direction: row;
-        gap: 12px;
+    .apps-detail-section-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--st-text-muted, #888);
+        margin: 12px 0 8px;
     }
-
-    .app-detail-icon {
-        padding: 8px;
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.06));
-        border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.12));
-        border-radius: 5px;
-        display: flex;
-        align-items: center;
-    }
-
-    .app-detail-icon img {
-        width: 24px;
-        height: 24px;
-        object-fit: contain;
-    }
-
     .apps-detail-input {
         width: 100%;
         box-sizing: border-box;
@@ -627,15 +441,18 @@
         font-size: 13px;
         font-family: inherit;
     }
-
-    .apps-detail-actions {
-        display: flex;
-        flex-direction: row;
-        gap: 8px;
+    .apps-time {
+        width: auto;
     }
-
+    .apps-num {
+        width: 72px;
+    }
+    .apps-select {
+        width: auto;
+    }
     .apps-detail-btn {
         padding: 6px 12px;
+        margin: 4px 4px 4px 0;
         border-radius: 6px;
         border: 1px solid var(--st-border-color, rgba(255, 255, 255, 0.15));
         background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
@@ -643,57 +460,6 @@
         font-size: 12px;
         cursor: pointer;
         font-family: inherit;
-    }
-
-    .apps-detail-btn:disabled {
-        opacity: 0.5;
-        cursor: default;
-    }
-
-    .apps-detail-btn--danger {
-        border-color: rgba(200, 80, 80, 0.4);
-    }
-
-    .apps-detail-section-title {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: var(--st-text-muted, #888);
-        margin: 12px 0 8px;
-    }
-
-    .apps-queue-list {
-        list-style: none;
-        margin: 0 0 12px;
-        padding: 0;
-    }
-
-    .apps-queue-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 6px;
-    }
-
-    .apps-queue-link {
-        flex: 1;
-        min-width: 0;
-        text-align: left;
-        background: none;
-        border: none;
-        color: var(--st-text-primary, #8ab4f8);
-        cursor: pointer;
-        font-size: 12px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        font-family: inherit;
-        padding: 0;
-    }
-    .apps-queue-link:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
     }
     .apps-check {
         display: flex;
@@ -728,15 +494,6 @@
         color: var(--st-text-muted, #888);
         font-size: 12px;
     }
-    .apps-time {
-        width: auto;
-    }
-    .apps-num {
-        width: 72px;
-    }
-    .apps-select {
-        width: auto;
-    }
     .apps-textarea {
         width: 100%;
         box-sizing: border-box;
@@ -765,33 +522,17 @@
         color: var(--st-text-muted, #888);
         font-size: 11px;
     }
-
-    .apps-queue-remove {
-        flex-shrink: 0;
-        width: 28px;
-        height: 28px;
-        border: none;
-        border-radius: 4px;
-        background: var(--st-bg-secondary, rgba(255, 255, 255, 0.08));
-        color: var(--st-text-primary, #fff);
-        cursor: pointer;
-        font-size: 18px;
-        line-height: 1;
-    }
-
     .apps-suggestions-text {
         white-space: pre-wrap;
-        font-size: 12px;
-        line-height: 1.45;
-        margin-top: 8px;
+        font-size: 11px;
+        line-height: 1.4;
+        margin-top: 6px;
         color: var(--st-text-primary, #eee);
-        font-family: inherit;
     }
-
     .news-detail-error {
         color: var(--st-text-primary, #f0a0a0);
+        font-size: 12px;
     }
-
     .empty-state {
         padding: 24px 16px;
         color: var(--st-text-muted, #888);

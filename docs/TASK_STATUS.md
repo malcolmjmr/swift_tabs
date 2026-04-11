@@ -1,6 +1,6 @@
 # Task Status
 
-**Last Completed:** Documented Link Context Menu [9c] in `docs/features/feature_link_context_menu.md`; updated `features_overview.md` (catalog, dependency map, implementation status, doc link), `feature_link_preview.md` (relation to 9c), and clarified Feature 101 vs shipped preview path.
+**Last Completed:** App access policies (time windows + Chrome history visit limits), inheritance from layout folders, home/folder strip filtering, tab close for blocked domains, LLM+Search fetch routines with `chrome.alarms` and folder/app detail UIs (`appsAccess.js`, `appsRoutines.js`, `OmniboxSectionAppsFolderDetailPanel`, docs updates).
 
 **Next Task:** Tab Menu gaps per feature_tab_context_menu.md § Outstanding Items, or Find in Page (Feature 10).
 

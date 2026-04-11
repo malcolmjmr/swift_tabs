@@ -289,6 +289,19 @@ export const chromeService = {
         return this.sendMessage("APPS_REMOVE_FROM_HOME", { appId });
     },
 
+    /**
+     * @param {'app'|'folder'} scope
+     * @param {string} id — app id or folder id
+     * @param {string} routineId
+     */
+    async appsRunRoutine(scope, id, routineId) {
+        return this.sendMessage("APPS_RUN_ROUTINE", {
+            scope,
+            id,
+            routineId,
+        });
+    },
+
     async linkQueuePush(url, title = "") {
         return this.sendMessage("LINK_QUEUE_PUSH", { url, title });
     },
