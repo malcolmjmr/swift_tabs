@@ -593,7 +593,10 @@ const chromeApiHandlers = {
         return { success: true };
     },
 
-    async CREATE_WINDOW({ tabId, tabIds, focused = false, asPopup = false }, sender) {
+    async CREATE_WINDOW(
+        { tabId, tabIds, focused = false, asPopup = false, incognito = false },
+        sender,
+    ) {
         const useFocused = focused === true;
         const restoreToWindowId = sender?.tab?.windowId ?? null;
         const ids =
@@ -615,12 +618,39 @@ const chromeApiHandlers = {
         const sorted = [...metas].sort((a, b) => a.index - b.index);
         const orderedIds = sorted.map((t) => t.id);
 
+        const wantIncognito = incognito === true;
+        const sourceIncognito = metas[0].incognito === true;
+
+        // Normal tabs cannot be moved into an incognito window; open URL(s) there and close sources.
+        if (wantIncognito && !sourceIncognito) {
+            const url = metas[0].url;
+            if (!url || !/^https?:\/\//i.test(url)) {
+                throw new Error(
+                    "Only http(s) pages can be opened in a private window",
+                );
+            }
+            const newWindow = await chrome.windows.create({
+                url,
+                focused: useFocused,
+                incognito: true,
+                ...(asPopup === true ? { type: "popup" } : {}),
+            });
+            for (const id of orderedIds) {
+                await chrome.tabs.remove(id);
+            }
+            if (!useFocused) {
+                await restoreChromeWindowFocus(restoreToWindowId, [newWindow.id]);
+            }
+            broadcastTabsDataChanged();
+            return chrome.windows.get(newWindow.id, { populate: true });
+        }
+
         // Always open an empty window first, then tabs.move — avoids Chrome
         // focusing/juggling tabId-on-create behavior.
         const newWindow = await chrome.windows.create({
             url: "about:blank",
             focused: useFocused,
-            incognito: metas[0].incognito === true,
+            incognito: wantIncognito ? true : sourceIncognito,
             ...(asPopup === true ? { type: "popup" } : {}),
         });
         const blankTab = newWindow.tabs?.[0];

@@ -57,14 +57,6 @@
     $: moveAddressTab =
         isInNavigationMode || isInTriageMode ? selectedTab : currentTab;
 
-    async function handleMoveToWindow(/** @type {CustomEvent} */ e) {
-        const t = moveAddressTab;
-        if (!t?.id) return;
-        await tabStore.moveTab(t.id, e.detail.windowId);
-        showMoveMenu = false;
-        await tabStore.refreshState();
-    }
-
     async function handleMoveMenuMoved() {
         await tabStore.refreshState();
     }
@@ -96,11 +88,9 @@
 {#if showMoveMenu}
     <MoveMenu
         tab={moveAddressTab}
-        windows={windowsList}
         on:close={() => {
             showMoveMenu = false;
         }}
-        on:moveToWindow={handleMoveToWindow}
         on:moved={handleMoveMenuMoved}
     />
 {/if}

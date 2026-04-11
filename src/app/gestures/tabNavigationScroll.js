@@ -203,6 +203,7 @@ export function handleHorizontalCarouselScroll(deltaX, ctx) {
 export function handleWheelDocument(event, ctx) {
     const {
         tabMenuIsOpen,
+        moveMenuIsOpen,
         systemMenuIsOpen,
         settingsPageIsOpen,
         getShowActiveTabInfo,
@@ -215,7 +216,8 @@ export function handleWheelDocument(event, ctx) {
 
     if (systemMenuIsOpen || settingsPageIsOpen) return;
 
-    if (tabMenuIsOpen) {
+    const overlayMenuOpen = tabMenuIsOpen === true || moveMenuIsOpen === true;
+    if (overlayMenuOpen) {
         if (tabMenuWheelSelectHandler) {
             const isVerticalScroll =
                 Math.abs(event.deltaX) < Math.abs(event.deltaY);

@@ -248,14 +248,14 @@ export const chromeService = {
         return { success: true };
     },
 
-    /** @param {number} tabId @param {{ focused?: boolean }} [options] */
+    /** @param {number} tabId @param {{ focused?: boolean; asPopup?: boolean; incognito?: boolean }} [options] */
     async createWindowWithTab(tabId, options = {}) {
         return this.createWindowWithTabs([tabId], options);
     },
 
     /**
      * @param {number[]} tabIds
-     * @param {{ focused?: boolean }} [options]
+     * @param {{ focused?: boolean; asPopup?: boolean; incognito?: boolean }} [options]
      */
     async createWindowWithTabs(tabIds, options = {}) {
         const ids = [...new Set(tabIds)].filter((id) => id != null);
@@ -277,6 +277,63 @@ export const chromeService = {
         const sourceWin = windowsState.find((w) => w.id === sourceWindowId);
         if (!sourceWin?.tabs) throw new Error("Source window missing");
 
+        const wantIncognito = options.incognito === true;
+        const sourceIncognito = sorted[0].incognito === true;
+
+        if (wantIncognito && !sourceIncognito) {
+            const url = sorted[0].url;
+            if (!url || !/^https?:\/\//i.test(url)) {
+                throw new Error(
+                    "Only http(s) pages can be opened in a private window",
+                );
+            }
+            const hadFocus = !!sourceWin.focused;
+            const newId = nextSyntheticId++;
+            /** @type {chrome.tabs.Tab} */
+            const movedTab = {
+                ...structuredClone(sorted[0]),
+                id: nextSyntheticId++,
+                windowId: newId,
+                index: 0,
+                incognito: true,
+            };
+            /** @type {chrome.windows.Window} */
+            const newWin = {
+                id: newId,
+                focused: false,
+                state: "normal",
+                type: options.asPopup === true ? "popup" : "normal",
+                incognito: true,
+                tabs: [movedTab],
+            };
+            for (const t of sorted) {
+                const ent = findTabEntry(t.id);
+                if (ent) {
+                    ent.win.tabs.splice(ent.index, 1);
+                    reindexTabs(ent.win);
+                }
+            }
+            if (sourceWin.tabs.length === 0) {
+                windowsState = windowsState.filter((w) => w.id !== sourceWin.id);
+            }
+            windowsState.push(newWin);
+            if (options.focused === true) {
+                ensureFocusedWindow(newWin.id);
+            } else if (hadFocus) {
+                const anchor =
+                    windowsState.find((w) => w.focused && (w.tabs?.length ?? 0) > 0) ??
+                    windowsState.find((w) => (w.tabs?.length ?? 0) > 0);
+                if (anchor) ensureFocusedWindow(anchor.id);
+                else ensureFocusedWindow(newWin.id);
+            }
+            if (!windowsState.some((w) => w.focused)) {
+                const pick =
+                    windowsState.find((w) => (w.tabs?.length ?? 0) > 0) ?? newWin;
+                ensureFocusedWindow(pick.id);
+            }
+            return structuredClone(newWin);
+        }
+
         const hadFocus = !!sourceWin.focused;
         const newId = nextSyntheticId++;
         /** @type {chrome.windows.Window} */
@@ -285,7 +342,7 @@ export const chromeService = {
             focused: false,
             state: "normal",
             type: options.asPopup === true ? "popup" : "normal",
-            incognito: false,
+            incognito: wantIncognito ? true : sourceIncognito,
             tabs: [],
         };
 

@@ -68,6 +68,7 @@ export function applyMoveModeDeltas(deltaX, deltaY, ctx) {
 export function handleMoveModeMouseMove(event, ctx) {
     const {
         tabMenuIsOpen,
+        moveMenuIsOpen,
         systemMenuIsOpen,
         settingsPageIsOpen,
         isInNavigationMode,
@@ -77,7 +78,14 @@ export function handleMoveModeMouseMove(event, ctx) {
         applyMoveModeDeltasFn,
     } = ctx;
 
-    if (tabMenuIsOpen || systemMenuIsOpen || settingsPageIsOpen) return;
+    if (
+        tabMenuIsOpen ||
+        moveMenuIsOpen ||
+        systemMenuIsOpen ||
+        settingsPageIsOpen
+    ) {
+        return;
+    }
     if (
         !isInNavigationMode ||
         !(event.buttons & 2) ||

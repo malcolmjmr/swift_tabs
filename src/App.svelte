@@ -661,6 +661,7 @@
         linkMenuHostRef?.onMouseMoveForLink(event);
         handleMoveModeMouseMove(event, {
             tabMenuIsOpen,
+            moveMenuIsOpen: showMoveMenu,
             systemMenuIsOpen,
             settingsPageIsOpen,
             isInNavigationMode,
@@ -918,6 +919,7 @@
     function buildGestureCtx() {
         return {
             tabMenuIsOpen,
+            moveMenuIsOpen: showMoveMenu,
             systemMenuIsOpen,
             settingsPageIsOpen,
             getShowActiveTabInfo: () => showActiveTabInfo,

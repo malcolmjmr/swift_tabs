@@ -124,26 +124,28 @@ export const chromeService = {
 
     /**
      * @param {number} tabId
-     * @param {{ focused?: boolean; asPopup?: boolean }} [options] — default focused: false
+     * @param {{ focused?: boolean; asPopup?: boolean; incognito?: boolean }} [options] — default focused: false
      */
     async createWindowWithTab(tabId, options = {}) {
         return this.sendMessage("CREATE_WINDOW", {
             tabId,
             focused: options.focused === true,
             asPopup: options.asPopup === true,
+            incognito: options.incognito === true,
         });
     },
 
     /**
      * Move multiple tabs from the same window into a new window (order preserved).
      * @param {number[]} tabIds
-     * @param {{ focused?: boolean; asPopup?: boolean }} [options]
+     * @param {{ focused?: boolean; asPopup?: boolean; incognito?: boolean }} [options]
      */
     async createWindowWithTabs(tabIds, options = {}) {
         return this.sendMessage("CREATE_WINDOW", {
             tabIds,
             focused: options.focused === true,
             asPopup: options.asPopup === true,
+            incognito: options.incognito === true,
         });
     },
 
