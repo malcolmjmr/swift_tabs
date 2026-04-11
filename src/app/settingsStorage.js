@@ -6,7 +6,7 @@ export const SETTINGS_DEFAULTS = {
     defaultView: "windows",
     longPressDelayMs: 500,
     scrollVerticalThreshold: 33,
-    scrollHorizontalThreshold: 33,
+    scrollHorizontalThreshold: 50,
 };
 
 /**

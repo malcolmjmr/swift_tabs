@@ -127,6 +127,7 @@
     }
 
     let lastScrolledIndex = -1;
+    let trackIsInitialized = false;
 
     async function scrollTrackToIndex(i) {
         await tick();
@@ -136,7 +137,11 @@
         const target = Math.max(0, Math.min(i, totalSlides - 1)) * w;
         if (Math.abs(trackEl.scrollLeft - target) < 2) return;
         programmaticScroll = true;
-        trackEl.scrollTo({ left: target, behavior: "auto" });
+        trackEl.scrollTo({
+            left: target,
+            behavior: trackIsInitialized ? "smooth" : "instant",
+        });
+        trackIsInitialized = true;
         requestAnimationFrame(() => {
             programmaticScroll = false;
         });
@@ -575,6 +580,7 @@
         scroll-snap-type: x mandatory;
         scrollbar-width: none;
         -ms-overflow-style: none;
+        scroll-behavior: smooth;
     }
 
     .track::-webkit-scrollbar {

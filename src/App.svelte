@@ -70,7 +70,7 @@
 
     $: longPressThreshold = settings.longPressDelayMs ?? 500;
     $: scrollVerticalThreshold = settings.scrollVerticalThreshold ?? 33;
-    $: scrollHorizontalThreshold = settings.scrollHorizontalThreshold ?? 33;
+    $: scrollHorizontalThreshold = settings.scrollHorizontalThreshold ?? 60;
 
     let spaceLongPressTimer = null;
     let altLongPressTimer = null;
