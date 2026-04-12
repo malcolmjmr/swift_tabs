@@ -26,6 +26,11 @@
  * @property {number} [habitStreak]
  * @property {number} [habitLastLogged] Unix ms
  * @property {string} [url] Optional http(s) link when objective represents a saved URL
+ * @property {number|null} [durationValue] Estimated effort length (e.g. hours)
+ * @property {string} [durationPeriod] Unit: minute, hour, day, week, month, or free text
+ * @property {boolean} [isRecurring] True if this is a habit/recurring objective
+ * @property {string} [category] Category for habits/goals: Health, Learning, Productivity, Creativity, Social, Wellness, Finance, Career
+ * @property {number} [completionCount] Number of times a habit has been completed
  */
 
 export const TIMEFRAMES = /** @type {const} */ ([
@@ -59,6 +64,16 @@ export function nextFinerTimeframe(t) {
     const i = TIMEFRAME_ORDER[t];
     if (i === undefined || i >= TIMEFRAMES.length - 1) return null;
     return TIMEFRAMES[i + 1];
+}
+
+/**
+ * @param {Timeframe} t
+ * @returns {Timeframe|null}
+ */
+export function prevCoarserTimeframe(t) {
+    const i = TIMEFRAME_ORDER[t];
+    if (i === undefined || i <= 0) return null;
+    return TIMEFRAMES[i - 1];
 }
 
 /**
@@ -136,7 +151,25 @@ export function normalizeObjective(raw) {
             typeof raw.habitLastLogged === "number"
                 ? raw.habitLastLogged
                 : undefined,
+        isRecurring: typeof raw.isRecurring === "boolean" ? raw.isRecurring : false,
+        category: typeof raw.category === "string" ? raw.category : "",
+        completionCount: typeof raw.completionCount === "number" ? raw.completionCount : 0,
     };
+    const dv = raw.durationValue;
+    const dvn =
+        dv == null || dv === ""
+            ? null
+            : typeof dv === "number"
+              ? dv
+              : Number(dv);
+    if (dvn != null && Number.isFinite(dvn)) {
+        out.durationValue = dvn;
+    } else {
+        out.durationValue = null;
+    }
+    const dp =
+        typeof raw.durationPeriod === "string" ? raw.durationPeriod.trim() : "";
+    if (dp) out.durationPeriod = dp;
     if (urlTrim) out.url = urlTrim;
     return out;
 }

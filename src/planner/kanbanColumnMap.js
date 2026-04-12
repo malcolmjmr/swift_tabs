@@ -85,6 +85,13 @@ export function applyObjectiveToKanbanColumn(o, tf, targetColumn) {
         }
         case "done":
             next = { ...next, status: "completed" };
+            // Increment completion count for recurring/habit objectives
+            if (next.isRecurring) {
+                next = {
+                    ...next,
+                    completionCount: (next.completionCount || 0) + 1,
+                };
+            }
             break;
         default:
             break;
