@@ -1,11 +1,12 @@
 import "./demoLayout.css";
 import { installDemoChromeShim } from "./chromeShim.js";
-
-installDemoChromeShim();
-
+import { installDemoDocumentCapture } from "./demoDocumentCapture.js";
 import { mountSwiftTabs } from "../swiftTabsMount.js";
 import DemoTour from "./DemoTour.svelte";
 import DemoTabViewport from "./DemoTabViewport.svelte";
+
+installDemoChromeShim();
+installDemoDocumentCapture();
 
 document.body.classList.add("swift-tabs-demo");
 

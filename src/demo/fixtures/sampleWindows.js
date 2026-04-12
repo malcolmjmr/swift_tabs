@@ -206,6 +206,36 @@ export function createSampleWindows() {
                 },
             ],
         },
+        {
+            id: 2,
+            focused: false,
+            state: "normal",
+            type: "normal",
+            incognito: false,
+            name: "Side project",
+            tabs: [
+                {
+                    id: 201,
+                    index: 0,
+                    windowId: 2,
+                    title: "Rust Book — Ownership",
+                    url: "https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html",
+                    active: true,
+                    pinned: false,
+                    favIconUrl: fav("rust-lang.org"),
+                },
+                {
+                    id: 202,
+                    index: 1,
+                    windowId: 2,
+                    title: "crates.io — serde",
+                    url: "https://crates.io/crates/serde",
+                    active: false,
+                    pinned: false,
+                    favIconUrl: fav("crates.io"),
+                },
+            ],
+        },
     ];
     return w;
 }

@@ -431,7 +431,64 @@ export const chromeService = {
     },
 
     async searchHistory() {
-        return [];
+        return [
+            {
+                id: "hist_1",
+                url: "https://github.com/malcolmjmr/swift_tabs",
+                title: "swift_tabs - GitHub",
+                lastVisitTime: Date.now() - 1000 * 60 * 5,
+                visitCount: 12,
+            },
+            {
+                id: "hist_2",
+                url: "https://linear.app/example",
+                title: "Linear - Project Management",
+                lastVisitTime: Date.now() - 1000 * 60 * 30,
+                visitCount: 45,
+            },
+            {
+                id: "hist_3",
+                url: "https://www.notion.so",
+                title: "Notion - Workspace",
+                lastVisitTime: Date.now() - 1000 * 60 * 60,
+                visitCount: 89,
+            },
+            {
+                id: "hist_4",
+                url: "https://docs.google.com",
+                title: "Google Docs",
+                lastVisitTime: Date.now() - 1000 * 60 * 60 * 2,
+                visitCount: 23,
+            },
+            {
+                id: "hist_5",
+                url: "https://www.youtube.com",
+                title: "YouTube",
+                lastVisitTime: Date.now() - 1000 * 60 * 60 * 4,
+                visitCount: 156,
+            },
+            {
+                id: "hist_6",
+                url: "https://news.ycombinator.com",
+                title: "Hacker News",
+                lastVisitTime: Date.now() - 1000 * 60 * 60 * 6,
+                visitCount: 78,
+            },
+            {
+                id: "hist_7",
+                url: "https://www.reddit.com/r/programming",
+                title: "Programming - Reddit",
+                lastVisitTime: Date.now() - 1000 * 60 * 60 * 8,
+                visitCount: 34,
+            },
+            {
+                id: "hist_8",
+                url: "https://stackoverflow.com",
+                title: "Stack Overflow",
+                lastVisitTime: Date.now() - 1000 * 60 * 60 * 12,
+                visitCount: 67,
+            },
+        ];
     },
 
     async getTabGroups() {
@@ -439,11 +496,137 @@ export const chromeService = {
     },
 
     async getRecentlyClosed() {
-        return [];
+        const fav = (host) =>
+            `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+        return [
+            {
+                tab: {
+                    id: 2001,
+                    title: "Vercel Dashboard",
+                    url: "https://vercel.com/dashboard",
+                    favIconUrl: fav("vercel.com"),
+                },
+                lastModified: Date.now() - 1000 * 60 * 15,
+            },
+            {
+                tab: {
+                    id: 2002,
+                    title: "Figma - Design System",
+                    url: "https://www.figma.com/design",
+                    favIconUrl: fav("figma.com"),
+                },
+                lastModified: Date.now() - 1000 * 60 * 45,
+            },
+            {
+                window: {
+                    id: 99,
+                    tabs: [
+                        {
+                            id: 2003,
+                            title: "MDN Web Docs",
+                            url: "https://developer.mozilla.org",
+                            favIconUrl: fav("developer.mozilla.org"),
+                        },
+                        {
+                            id: 2004,
+                            title: "Can I use...",
+                            url: "https://caniuse.com",
+                            favIconUrl: fav("caniuse.com"),
+                        },
+                        {
+                            id: 2005,
+                            title: "web.dev",
+                            url: "https://web.dev",
+                            favIconUrl: fav("web.dev"),
+                        },
+                    ],
+                },
+                lastModified: Date.now() - 1000 * 60 * 60 * 2,
+            },
+        ];
     },
 
     async getSessionsOtherDevices() {
-        return [];
+        const fav = (host) =>
+            `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+        return [
+            {
+                deviceName: "MacBook Pro",
+                deviceType: "laptop",
+                sessions: [
+                    {
+                        window: {
+                            id: 301,
+                            tabs: [
+                                {
+                                    id: 3001,
+                                    title: "Stripe Dashboard",
+                                    url: "https://dashboard.stripe.com",
+                                    favIconUrl: fav("stripe.com"),
+                                },
+                                {
+                                    id: 3002,
+                                    title: "AWS Console",
+                                    url: "https://console.aws.amazon.com",
+                                    favIconUrl: fav("aws.amazon.com"),
+                                },
+                            ],
+                        },
+                        lastModified: Date.now() - 1000 * 60 * 30,
+                    },
+                    {
+                        tab: {
+                            id: 3003,
+                            title: "Kubernetes Documentation",
+                            url: "https://kubernetes.io/docs",
+                            favIconUrl: fav("kubernetes.io"),
+                        },
+                        lastModified: Date.now() - 1000 * 60 * 60,
+                    },
+                ],
+            },
+            {
+                deviceName: "iPhone 15 Pro",
+                deviceType: "phone",
+                sessions: [
+                    {
+                        tab: {
+                            id: 4001,
+                            title: "Maps - Directions to Restaurant",
+                            url: "https://maps.google.com",
+                            favIconUrl: fav("google.com"),
+                        },
+                        lastModified: Date.now() - 1000 * 60 * 5,
+                    },
+                ],
+            },
+            {
+                deviceName: "iPad Air",
+                deviceType: "tablet",
+                sessions: [
+                    {
+                        window: {
+                            id: 401,
+                            tabs: [
+                                {
+                                    id: 4002,
+                                    title: "YouTube - Tech Reviews",
+                                    url: "https://www.youtube.com",
+                                    favIconUrl: fav("youtube.com"),
+                                },
+                                {
+                                    id: 4003,
+                                    title: "Netflix",
+                                    url: "https://www.netflix.com",
+                                    favIconUrl: fav("netflix.com"),
+                                },
+                            ],
+                        },
+                        lastModified: Date.now() - 1000 * 60 * 60 * 3,
+                    },
+                ],
+            },
+        ];
     },
 
     async restoreSession() {

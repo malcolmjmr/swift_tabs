@@ -50,6 +50,14 @@ function installRuntime() {
                             /* ignore */
                         }
                     }
+                    if (
+                        message &&
+                        typeof message === "object" &&
+                        message.type === "NAVIGATION_MODE"
+                    ) {
+                        window.__swiftTabsDemoInNavMode =
+                            message.isInNavigationMode === true;
+                    }
                     for (const fn of runtimeMessageListeners) {
                         fn(message, {}, () => {});
                     }
